@@ -1,4 +1,4 @@
-Sift (EchoVault)
+Sift RAG
 
 English | 中文
 
