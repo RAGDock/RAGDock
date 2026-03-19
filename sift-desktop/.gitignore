@@ -1,0 +1,48 @@
+# --- Wails / Go ---
+build/bin/
+frontend/dist/
+wails.exe
+wails-dev.exe
+# 编译生成的二进制文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+# Go 依赖与测试
+vendor/
+go.sum
+*.test
+*.out
+
+# --- Frontend (Node/Svelte) ---
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/.env
+frontend/package-lock.json
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Sift 业务相关 (重要) ---
+# 数据库文件 (包含你的私人文档索引，严禁上传)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# 模型文件 (体积巨大，建议在 README 中提供下载链接而不是传到 Git)
+resources/models/*.onnx
+resources/models/tokenizer.json
+
+# 日志文件
+logs/
+*.log
+
+# --- IDE ---
+.idea/
+.vscode/
+*.iml
+*.swp
+*.bak
