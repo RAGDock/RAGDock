@@ -138,8 +138,8 @@ func (a *App) indexSingleFile(path string) {
 	}
 }
 
-// SearchAndAsk 核心 RAG 查询
-func (a *App) SearchAndAsk(query string) (string, error) {
+// SearchAndAsk 核心 RAG 查询 , 接收消息列表
+func (a *App) SearchAndAsk(query string, history []llm.Message) (string, error) {
 	queryVec, err := a.embedder.Generate(query)
 	if err != nil {
 		return "", err
@@ -169,7 +169,8 @@ func (a *App) SearchAndAsk(query string) (string, error) {
 	}
 
 	// 调用 Ollama 推理
-	return llm.AskOllama(a.cfg, contextBuilder.String(), query)
+	// 将历史记录也传给 Ollama
+	return llm.AskOllama(a.cfg, contextBuilder.String(), history, query)
 }
 
 // SelectAndIndexFolder 供前端点击“选择目录”调用

@@ -22,13 +22,28 @@ type GenerateResponse struct {
 	Response string `json:"response"`
 }
 
-// AskOllama 增加 cfg 参数
-func AskOllama(cfg *config.AppConfig, context string, question string) (string, error) {
-	fullPrompt := fmt.Sprintf(`你是 Sift 知识库助手。请严格基于以下【参考资料】回答用户问题。
-如果资料中没有相关信息，请直接回答“资料中未提及”，不要尝试编造。
+type Message struct {
+	Role    string `json:"role"` // "user" 或 "assistant"
+	Content string `json:"content"`
+}
 
+// AskOllama 增加 cfg 参数
+// 修改函数签名，接收历史记录
+func AskOllama(cfg *config.AppConfig, context string, history []Message, question string) (string, error) {
+	var historyStr strings.Builder
+	for _, msg := range history {
+		roleName := "用户"
+		if msg.Role == "assistant" {
+			roleName = "助手"
+		}
+		historyStr.WriteString(fmt.Sprintf("%s: %s\n", roleName, msg.Content))
+	}
+
+	fullPrompt := fmt.Sprintf(`你是 Sift 知识库助手。请严谨的根据提供的资料和对话历史回答用户的问题，绝对不能胡编乱造或回复不想关的内容。
 【参考资料】：%s
-【用户问题】：%s`, context, question)
+【对话历史】：
+%s
+【当前问题】：%s`, context, historyStr.String(), question)
 
 	reqBody := GenerateRequest{
 		Model:  cfg.OllamaModel, // 使用配置中的模型名

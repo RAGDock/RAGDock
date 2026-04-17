@@ -22,12 +22,11 @@ frontend/node_modules/
 frontend/.vite/        # 💡 新增：Vite 缓存
 frontend/.svelte-kit/
 frontend/.env
-# frontend/package-lock.json -> 💡 建议移除忽略，提交到仓库
 .DS_Store
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-*.md5                  # 💡 新增：忽略 MD5 校验缓存
+*.md5
 
 # --- Sift 业务相关 (重要) ---
 # 数据库文件 (包含你的私人文档索引，严禁上传)
