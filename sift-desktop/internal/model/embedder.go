@@ -19,12 +19,17 @@ type Embedder struct {
 
 func NewEmbedder(cfg *config.AppConfig) (*Embedder, error) {
 	if !ort.IsInitialized() {
-		// 跨平台获取 onnxruntime 路径
-		ortPath := cfg.GetFullLibPath("onnxruntime")
+		// ✅ 修改：传参不再包含 ".dylib"，交给 GetFullLibPath 自动处理
+		// 注意：Mac 下该文件名为 libonnxruntime.dylib，所以传 "libonnxruntime"
+		ortPath := cfg.GetFullLibPath("libonnxruntime")
 
 		fmt.Printf("🔍 正在加载推理引擎: %s\n", ortPath)
 		ort.SetSharedLibraryPath(ortPath)
-		_ = ort.InitializeEnvironment()
+
+		err := ort.InitializeEnvironment()
+		if err != nil {
+			return nil, fmt.Errorf("ONNX 初始化失败: %v", err)
+		}
 	}
 
 	// 使用配置中的分词器路径

@@ -1,85 +1,113 @@
 package config
 
 import (
-	"log"
 	"os"
 	"path/filepath"
-	"runtime" // ✅ 引入 runtime 包用于检测系统
+	"runtime"
 	"strconv"
 
 	"github.com/joho/godotenv"
 )
 
 type AppConfig struct {
+	// Ollama 相关配置
+	OllamaURL           string
+	OllamaModel         string
+	RagK                int
+	OllamaTemp          float32
+	OllamaRepeatPenalty float32
+
+	// 本地模型与向量配置
 	ModelDir      string
-	ModelFileName string
+	ModelFilename string
 	TokenizerName string
 	ModelDim      int
-	DbDir         string
-	DbName        string
-	OllamaURL     string
-	OllamaModel   string
-	LibDir        string // ✅ 新增：动态库存储目录
+	EmbedderModel string
+
+	// 数据库配置
+	DbDir  string
+	DbName string
 }
 
 func LoadConfig() *AppConfig {
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("⚠️ 未找到 .env 文件，将尝试使用系统环境变量")
-	}
-
-	wd, _ := os.Getwd()
+	_ = godotenv.Load()
 
 	return &AppConfig{
-		ModelDir:      getEnv("MODEL_DIR", filepath.Join(wd, "resources", "models")),
-		ModelFileName: getEnv("MODEL_FILENAME", "model.onnx"),
+		// ✅ 修正：环境变量键名与 .env 保持全大写一致
+		OllamaURL:           getEnv("OLLAMA_URL", "http://localhost:11434"),
+		OllamaModel:         getEnv("OLLAMA_MODEL", "qwen2.5:1.5b"),
+		EmbedderModel:       getEnv("EMBEDDER_MODEL", "bge-m3"),
+		RagK:                getEnvInt("RAG_K", 5),
+		OllamaTemp:          getEnvFloat("OLLAMA_TEMP", 0.1),
+		OllamaRepeatPenalty: getEnvFloat("OLLAMA_REPEAT_PENALTY", 1.6),
+
+		// 本地路径配置
+		ModelDir:      getEnv("MODEL_DIR", "resources/models"),
+		ModelFilename: getEnv("MODEL_FILENAME", "model.onnx"),
 		TokenizerName: getEnv("TOKENIZER_NAME", "tokenizer.json"),
-		ModelDim:      getEnvAsInt("MODEL_DIM", 384),
-		DbDir:         getEnv("DB_DIR", wd),
+		ModelDim:      getEnvInt("MODEL_DIM", 384),
+		DbDir:         getEnv("DB_DIR", "."),
 		DbName:        getEnv("DB_NAME", "sift_local.db"),
-		OllamaURL:     getEnv("OLLAMA_URL", "http://localhost:11434"),
-		OllamaModel:   getEnv("OLLAMA_MODEL", "qwen3.5:0.8b"),
-		LibDir:        getEnv("LIB_DIR", filepath.Join(wd, "resources", "lib")), // ✅ 默认 resources/lib
 	}
 }
 
-// ✅ 新增：根据平台获取正确的动态库文件名
-func (c *AppConfig) GetLibFileName(baseName string) string {
+// GetFullLibPath 根据平台自动补全库文件后缀
+// baseName: 不带后缀的文件名，如 "vec0" 或 "libonnxruntime"
+func (c *AppConfig) GetFullLibPath(baseName string) string {
+	ext := ".so" // 默认 Linux
 	switch runtime.GOOS {
 	case "windows":
-		return baseName + ".dll"
+		ext = ".dll"
 	case "darwin":
-		// macOS 上的库通常有 lib 前缀，如 libonnxruntime.dylib
-		if baseName == "onnxruntime" {
-			return "lib" + baseName + ".dylib"
-		}
-		return baseName + ".dylib"
-	default: // linux
-		return "lib" + baseName + ".so"
+		ext = ".dylib"
 	}
+
+	fullName := baseName + ext
+	return filepath.Join("resources", "lib", fullName)
 }
 
-// ✅ 新增：获取动态库的完整绝对路径
-func (c *AppConfig) GetFullLibPath(baseName string) string {
-	return filepath.Join(c.LibDir, c.GetLibFileName(baseName))
+func (c *AppConfig) GetTokenizerPath() string {
+	return filepath.Join(c.ModelDir, c.TokenizerName)
 }
 
-// 路径拼接辅助方法
-func (c *AppConfig) GetModelPath() string     { return filepath.Join(c.ModelDir, c.ModelFileName) }
-func (c *AppConfig) GetTokenizerPath() string { return filepath.Join(c.ModelDir, c.TokenizerName) }
-func (c *AppConfig) GetDbPath() string        { return filepath.Join(c.DbDir, c.DbName) }
+func (c *AppConfig) GetModelPath() string {
+	return filepath.Join(c.ModelDir, c.ModelFilename)
+}
 
-// 辅助函数保持不变
+func (c *AppConfig) GetDbPath() string {
+	return filepath.Join(c.DbDir, c.DbName)
+}
+
+// --- 辅助转换函数 ---
+
 func getEnv(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
 	}
-	return defaultValue
+	return value
 }
-func getEnvAsInt(key string, defaultValue int) int {
-	valueStr := getEnv(key, "")
-	if value, err := strconv.Atoi(valueStr); err == nil {
-		return value
+
+func getEnvInt(key string, defaultValue int) int {
+	valueStr := os.Getenv(key)
+	if valueStr == "" {
+		return defaultValue
 	}
-	return defaultValue
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return defaultValue
+	}
+	return value
+}
+
+func getEnvFloat(key string, defaultValue float32) float32 {
+	valueStr := os.Getenv(key)
+	if valueStr == "" {
+		return defaultValue
+	}
+	value, err := strconv.ParseFloat(valueStr, 32)
+	if err != nil {
+		return defaultValue
+	}
+	return float32(value)
 }

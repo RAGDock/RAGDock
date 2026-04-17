@@ -22,7 +22,7 @@ func NewManager(cfg *config.AppConfig) (*Manager, error) {
 
 	if !isDriverRegistered {
 		sql.Register("sqlite3_sift", &sqlite3.SQLiteDriver{
-			Extensions: []string{vecPath}, // 自动适配 .dll / .dylib / .so
+			Extensions: []string{vecPath},
 		})
 		isDriverRegistered = true
 	}

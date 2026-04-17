@@ -9,3 +9,7 @@ export function SearchAndAsk(arg1, arg2) {
 export function SelectAndIndexFolder() {
   return window['go']['main']['App']['SelectAndIndexFolder']();
 }
+
+export function StopSearch() {
+  return window['go']['main']['App']['StopSearch']();
+}

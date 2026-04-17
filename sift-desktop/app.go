@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,11 +22,12 @@ import (
 )
 
 type App struct {
-	ctx      context.Context
-	cfg      *config.AppConfig // ✅ 新增配置支持
-	mgr      *db.Manager
-	embedder *model.Embedder
-	watcher  *fsnotify.Watcher
+	ctx        context.Context
+	cfg        *config.AppConfig  // ✅ 新增配置支持
+	cancelFunc context.CancelFunc // ✅ 新增：用于存放当前请求的取消函数
+	mgr        *db.Manager
+	embedder   *model.Embedder
+	watcher    *fsnotify.Watcher
 }
 
 func NewApp() *App {
@@ -138,39 +140,84 @@ func (a *App) indexSingleFile(path string) {
 	}
 }
 
-// SearchAndAsk 核心 RAG 查询 , 接收消息列表
-func (a *App) SearchAndAsk(query string, history []llm.Message) (string, error) {
-	queryVec, err := a.embedder.Generate(query)
-	if err != nil {
-		return "", err
+// SearchAndAsk 处理 RAG 查询，支持多轮对话与流式输出 query: 当前用户提问内容 history: 之前的对话历史记录
+func (a *App) SearchAndAsk(query string, history []llm.Message) error {
+	// ✅ 修正：增加 nil 检查，防止 invalid memory address 报错
+	if a.embedder == nil {
+		return fmt.Errorf("嵌入模型未成功加载，请检查资源文件")
+	}
+	if a.mgr == nil || a.mgr.Conn == nil {
+		return fmt.Errorf("数据库未连接")
 	}
 
-	rows, err := a.mgr.Conn.Query(`
+	var searchCtx context.Context
+	searchCtx, a.cancelFunc = context.WithCancel(a.ctx)
+
+	// 确保方法结束时清理取消函数
+	defer func() {
+		a.cancelFunc = nil
+	}()
+
+	// 2. 生成问题的向量索引
+	queryVec, err := a.embedder.Generate(query)
+	if err != nil {
+		return fmt.Errorf("向量化失败: %v", err)
+	}
+
+	// 3. 在本地数据库中检索最相关的资料 (K=5 降低小模型负担)
+	// 注意：此处使用 Float32ToByte 转换向量格式
+	rows, err := a.mgr.Conn.Query(fmt.Sprintf(`
         SELECT d.heading, d.content 
         FROM vec_idx v
         JOIN documents d ON v.rowid = d.id
-        WHERE embedding MATCH ? AND k = 10
-        ORDER BY distance`, Float32ToByte(queryVec))
+        WHERE embedding MATCH ? AND k = %d
+        ORDER BY distance`, a.cfg.RagK), Float32ToByte(queryVec))
 
 	if err != nil {
-		return "", err
+		return fmt.Errorf("数据库检索失败: %v", err)
 	}
 	defer rows.Close()
 
+	// 4. 构建上下文文本块
 	var contextBuilder strings.Builder
 	for rows.Next() {
 		var heading, content string
-		rows.Scan(&heading, &content)
-		contextBuilder.WriteString(fmt.Sprintf("\n### %s\n%s\n", heading, content))
+		if err := rows.Scan(&heading, &content); err == nil {
+			contextBuilder.WriteString(fmt.Sprintf("\n### %s\n%s\n", heading, content))
+		}
 	}
 
-	if contextBuilder.Len() == 0 {
-		return "未找到相关参考资料。请确保已建立索引。", nil
+	contextText := contextBuilder.String()
+	if contextText == "" {
+		contextText = "未找到相关的本地文档参考。"
 	}
 
-	// 调用 Ollama 推理
-	// 将历史记录也传给 Ollama
-	return llm.AskOllama(a.cfg, contextBuilder.String(), history, query)
+	// 5. 启动流式请求
+	// 将 searchCtx 传入，以便支持用户手动中止
+	err = llm.StreamOllama(searchCtx, a.cfg, contextText, history, query, func(token llm.GenerateResponse) {
+		// ✅ 通过 Wails 事件系统将实时 Token 发送至前端
+		// 包含 token.Thinking (思考内容) 和 token.Response (正式回答)
+		runtime.EventsEmit(a.ctx, "llm_token", token)
+	})
+
+	if err != nil {
+		// 如果是因为用户手动取消导致的错误，不视为系统异常
+		if errors.Is(err, context.Canceled) {
+			fmt.Println("ℹ️ 用户中止了搜索请求")
+			return nil
+		}
+		return err
+	}
+
+	return nil
+}
+
+// StopSearch 供前端调用的中止方法
+func (a *App) StopSearch() {
+	if a.cancelFunc != nil {
+		a.cancelFunc() // ✅ 核心：触发 context 取消信号
+		fmt.Println("🛑 用户手动中止了模型输出")
+	}
 }
 
 // SelectAndIndexFolder 供前端点击“选择目录”调用
