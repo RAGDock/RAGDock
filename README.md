@@ -102,7 +102,7 @@ sift-desktop/
 
 1. **Ollama**: 安装并运行 [Ollama](https://www.google.com/search?q=https://ollama.com/)。
     * 下载模型: ollama pull qwen2.5:3b (或你在代码中指定的自定义模型名)。
-2. **Go**: 安装 Go 1.21+。
+2. **Go**: 安装 Go 1.22+。
 3. **Node.js**: 安装 Node.js 18+ 及 npm。
 4. **Wails**: 安装 Wails CLI: go install github.com/wailsapp/wails/v2/cmd/wails@latest。
 
