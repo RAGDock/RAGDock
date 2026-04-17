@@ -1,4 +1,4 @@
-# **Sift RAG**
+# **SiftRAG**
 
 [English](https://www.google.com/search?q=%23english) | [中文](https://www.google.com/search?q=%23chinese)
 
