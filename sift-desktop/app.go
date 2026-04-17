@@ -7,24 +7,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"sift-desktop/internal/db"
-	"sift-desktop/internal/llm"
-	"sift-desktop/internal/model"
-	"sift-desktop/internal/parser"
 	"strings"
 	"time"
+
+	"sift.local/internal/config"
+	"sift.local/internal/db"
+	"sift.local/internal/llm"
+	"sift.local/internal/model"
+	"sift.local/internal/parser"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type App struct {
-	ctx       context.Context
-	mgr       *db.Manager
-	embedder  *model.Embedder
-	watcher   *fsnotify.Watcher
-	watchPath string
+	ctx      context.Context
+	cfg      *config.AppConfig // ✅ 新增配置支持
+	mgr      *db.Manager
+	embedder *model.Embedder
+	watcher  *fsnotify.Watcher
 }
 
 func NewApp() *App {
@@ -42,22 +43,58 @@ func Float32ToByte(slice []float32) []byte {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// 1. 加载配置
+	a.cfg = config.LoadConfig()
+
 	var err error
-	// 建议在 db.NewManager 内部使用绝对路径加载 sqlite-vec.dll
-	a.mgr, err = db.NewManager("./sift_pro.db")
+	// 2. 初始化数据库（传入配置对象）
+	a.mgr, err = db.NewManager(a.cfg)
 	if err != nil {
 		fmt.Printf("❌ 数据库加载失败: %v\n", err)
 	}
 
-	// 初始化 ONNX 模型
-	a.embedder, err = model.NewEmbedder("resources/models/model.onnx")
+	// 3. 初始化嵌入模型（传入配置对象）
+	a.embedder, err = model.NewEmbedder(a.cfg)
 	if err != nil {
 		fmt.Printf("❌ 模型加载失败: %v\n", err)
 	}
 }
 
-// indexSingleFile 单个文件入库逻辑, 增加了轮询逻辑
-// app.go
+// startWatcher 实时监听新文件
+func (a *App) startWatcher(path string) {
+	if a.watcher != nil {
+		a.watcher.Close()
+	}
+	var err error
+	a.watcher, err = fsnotify.NewWatcher()
+	if err != nil {
+		fmt.Printf("❌ 无法启动监听器: %v\n", err)
+		return
+	}
+
+	go func() {
+		for {
+			select {
+			case event, ok := <-a.watcher.Events:
+				if !ok {
+					return
+				}
+				// 监听创建或写入，仅处理 .md 文件
+				if (event.Op&fsnotify.Create == fsnotify.Create || event.Op&fsnotify.Write == fsnotify.Write) &&
+					strings.HasSuffix(strings.ToLower(event.Name), ".md") {
+					a.indexSingleFile(event.Name)
+					runtime.EventsEmit(a.ctx, "file_synced", "✅ 已同步文件: "+filepath.Base(event.Name))
+				}
+			case err, ok := <-a.watcher.Errors:
+				if !ok {
+					return
+				}
+				fmt.Printf("❌ 监听错误: %v\n", err)
+			}
+		}
+	}()
+	a.watcher.Add(path)
+}
 
 func (a *App) indexSingleFile(path string) {
 	if err := a.waitUntilReady(path, 5*time.Second); err != nil {
@@ -71,15 +108,13 @@ func (a *App) indexSingleFile(path string) {
 		return
 	}
 
-	// 🛠️ 关键修正 1：DELETE 必须放在循环外面！！
-	// 在插入新内容前，一次性删掉该文件的所有旧索引
+	// 清理旧索引
 	a.mgr.Conn.Exec("DELETE FROM vec_idx WHERE rowid IN (SELECT id FROM documents WHERE file_path = ?)", path)
 	a.mgr.Conn.Exec("DELETE FROM documents WHERE file_path = ?", path)
 
 	for _, c := range chunks {
-		// 🛠️ 关键修正 2：在这里增加拦截
 		if c.Content == "EMPTY_IGNORE" {
-			continue // 真正跳过空块，不计算向量，不入库
+			continue
 		}
 
 		vec, err := a.embedder.Generate(c.Content)
@@ -87,7 +122,6 @@ func (a *App) indexSingleFile(path string) {
 			continue
 		}
 
-		// 此时直接 INSERT 即可
 		res, err := a.mgr.Conn.Exec("INSERT INTO documents(heading, content, file_path) VALUES(?, ?, ?)",
 			c.Heading, c.Content, path)
 		if err != nil {
@@ -104,36 +138,13 @@ func (a *App) indexSingleFile(path string) {
 	}
 }
 
-// startWatcher 实时监听新文件
-func (a *App) startWatcher(path string) {
-	if a.watcher != nil {
-		a.watcher.Close()
-	}
-	a.watcher, _ = fsnotify.NewWatcher()
-	go func() {
-		for {
-			select {
-			case event, ok := <-a.watcher.Events:
-				if !ok {
-					return
-				}
-				// 监听创建或写入，不再需要外层 Sleep，由 indexSingleFile 内部轮询处理
-				if (event.Op&fsnotify.Create == fsnotify.Create || event.Op&fsnotify.Write == fsnotify.Write) &&
-					strings.HasSuffix(strings.ToLower(event.Name), ".md") {
-					a.indexSingleFile(event.Name)
-					runtime.EventsEmit(a.ctx, "file_synced", "✅ 已同步文件: "+filepath.Base(event.Name))
-				}
-			}
-		}
-	}()
-	a.watcher.Add(path)
-}
-
 // SearchAndAsk 核心 RAG 查询
 func (a *App) SearchAndAsk(query string) (string, error) {
-	queryVec, _ := a.embedder.Generate(query)
+	queryVec, err := a.embedder.Generate(query)
+	if err != nil {
+		return "", err
+	}
 
-	// 关键修复：使用 v.rowid = d.id 进行关联查询
 	rows, err := a.mgr.Conn.Query(`
         SELECT d.heading, d.content 
         FROM vec_idx v
@@ -153,16 +164,12 @@ func (a *App) SearchAndAsk(query string) (string, error) {
 		contextBuilder.WriteString(fmt.Sprintf("\n### %s\n%s\n", heading, content))
 	}
 
-	// 看看你到底喂给了 Ollama 什么东西
-	fmt.Printf("--- 检索到的上下文 ---\n%s\n------------------\n", contextBuilder.String())
-
 	if contextBuilder.Len() == 0 {
-		return "未找到相关参考资料。请确保已建立索引且数据库中有向量数据。", nil
+		return "未找到相关参考资料。请确保已建立索引。", nil
 	}
 
-	answer, _ := llm.AskOllama(contextBuilder.String(), query)
-	re := regexp.MustCompile(`(?s)<think>.*?</think>`)
-	return strings.TrimSpace(re.ReplaceAllString(answer, "")), nil
+	// 调用 Ollama 推理
+	return llm.AskOllama(a.cfg, contextBuilder.String(), query)
 }
 
 // SelectAndIndexFolder 供前端点击“选择目录”调用
@@ -175,11 +182,10 @@ func (a *App) SelectAndIndexFolder() (string, error) {
 	}
 
 	go a.indexDirectory(folderPath)
-	go a.startWatcher(folderPath)
+	go a.startWatcher(folderPath) // ✅ 这里现在可以正确被识别了
 	return folderPath, nil
 }
 
-// indexDirectory 递归扫描并索引目录
 func (a *App) indexDirectory(root string) {
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
@@ -190,22 +196,17 @@ func (a *App) indexDirectory(root string) {
 	runtime.EventsEmit(a.ctx, "index_complete", "📚 目录索引同步完成")
 }
 
-// waitUntilReady 循环探测文件是否可读，直到超时
 func (a *App) waitUntilReady(path string, timeout time.Duration) error {
 	start := time.Now()
 	for {
-		// 尝试以只读模式打开文件
 		f, err := os.OpenFile(path, os.O_RDONLY, 0)
 		if err == nil {
 			f.Close()
-			return nil // 文件已释放锁，可以读取
+			return nil
 		}
-
 		if time.Since(start) > timeout {
 			return fmt.Errorf("等待文件释放超时: %s", path)
 		}
-
-		// 如果失败，等 100 毫秒后再试
 		time.Sleep(100 * time.Millisecond)
 	}
 }

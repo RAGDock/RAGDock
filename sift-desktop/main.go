@@ -12,12 +12,12 @@ import (
 var assets embed.FS
 
 func main() {
-	// Create an instance of the app structure
+	// 1. 如果你希望在启动 Wails 之前做一些全局配置（可选）
+	// cfg := config.LoadConfig()
 	app := NewApp()
 
-	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "sift-desktop",
+		Title:  "sift-desktop", // 这里也可以改为 cfg.AppTitle 等
 		Width:  1024,
 		Height: 768,
 		AssetServer: &assetserver.Options{

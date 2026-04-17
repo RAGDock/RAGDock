@@ -3,52 +3,40 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
+
+	"sift.local/internal/config" // 引入配置包
 
 	"github.com/mattn/go-sqlite3"
 )
 
 type Manager struct {
-	Conn *sql.DB
+	Conn   *sql.DB
+	Config *config.AppConfig
 }
 
-// 保证驱动只注册一次
 var isDriverRegistered = false
 
-func NewManager(dbPath string) (*Manager, error) {
-	// 1. 动态获取基础路径
-	// 在 wails dev 模式下，工作目录 (Getwd) 始终是项目根目录
-	baseDir, _ := os.Getwd()
+func NewManager(cfg *config.AppConfig) (*Manager, error) {
+	// 跨平台获取 vec0 扩展路径
+	vecPath := cfg.GetFullLibPath("vec0")
 
-	// 拼接 vec0.dll 的相对路径
-	vecDllPath := filepath.Join(baseDir, "resources", "lib", "vec0.dll")
-
-	// 打印一下，方便调试时确认路径
-	fmt.Printf("📂 SQLite 正在尝试加载扩展: %s\n", vecDllPath)
-
-	// 2. 注册驱动 (增加安全检查，防止多次调用 NewManager 导致 panic)
 	if !isDriverRegistered {
 		sql.Register("sqlite3_sift", &sqlite3.SQLiteDriver{
-			Extensions: []string{vecDllPath},
+			Extensions: []string{vecPath}, // 自动适配 .dll / .dylib / .so
 		})
 		isDriverRegistered = true
 	}
 
-	// 3. 打开数据库
-	db, err := sql.Open("sqlite3_sift", dbPath)
+	db, err := sql.Open("sqlite3_sift", cfg.GetDbPath())
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %v", err)
 	}
 
-	m := &Manager{Conn: db}
-
-	// 4. 初始化表结构
+	m := &Manager{Conn: db, Config: cfg}
 	if err := m.bootstrap(); err != nil {
 		db.Close()
 		return nil, err
 	}
-
 	return m, nil
 }
 
@@ -62,10 +50,11 @@ func (m *Manager) bootstrap() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`
 
-	const createVecTable = `
+	// 从配置动态注入维度
+	createVecTable := fmt.Sprintf(`
 	CREATE VIRTUAL TABLE IF NOT EXISTS vec_idx USING vec0(
-		embedding FLOAT[384]
-	);`
+		embedding FLOAT[%d]
+	);`, m.Config.ModelDim)
 
 	m.Conn.Exec(createDocsTable)
 	m.Conn.Exec(createVecTable)

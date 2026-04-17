@@ -3,8 +3,8 @@ package model
 import (
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
+
+	"sift.local/internal/config" // 引入配置包
 
 	"github.com/sugarme/tokenizer"
 	"github.com/sugarme/tokenizer/pretrained"
@@ -14,33 +14,27 @@ import (
 type Embedder struct {
 	session   *ort.DynamicAdvancedSession
 	tokenizer *tokenizer.Tokenizer
+	Config    *config.AppConfig
 }
 
-func NewEmbedder(modelPath string) (*Embedder, error) {
-	// 1. 初始化 ONNX 环境 (保持你之前的修复逻辑)
+func NewEmbedder(cfg *config.AppConfig) (*Embedder, error) {
 	if !ort.IsInitialized() {
-		// 动态获取路径
-		wd, _ := os.Getwd()
-		dllPath := filepath.Join(wd, "resources", "lib", "onnxruntime.dll")
+		// 跨平台获取 onnxruntime 路径
+		ortPath := cfg.GetFullLibPath("onnxruntime")
 
-		fmt.Printf("🔍 正在动态加载 ONNX DLL: %s\n", dllPath)
-		ort.SetSharedLibraryPath(dllPath)
-
-		err := ort.InitializeEnvironment()
-		if err != nil {
-			return nil, fmt.Errorf("ONNX 初始化失败: %v", err)
-		}
+		fmt.Printf("🔍 正在加载推理引擎: %s\n", ortPath)
+		ort.SetSharedLibraryPath(ortPath)
+		_ = ort.InitializeEnvironment()
 	}
 
-	// 2. 加载分词器
-	tk, err := pretrained.FromFile("resources/models/tokenizer.json")
+	// 使用配置中的分词器路径
+	tk, err := pretrained.FromFile(cfg.GetTokenizerPath())
 	if err != nil {
 		return nil, fmt.Errorf("分词器加载失败: %v", err)
 	}
 
-	// 3. 创建推理会话
-	// 注意：输出节点名确认是 "last_hidden_state"
-	session, err := ort.NewDynamicAdvancedSession(modelPath,
+	// 使用配置中的模型路径
+	session, err := ort.NewDynamicAdvancedSession(cfg.GetModelPath(),
 		[]string{"input_ids", "attention_mask", "token_type_ids"},
 		[]string{"last_hidden_state"},
 		nil)
@@ -51,6 +45,7 @@ func NewEmbedder(modelPath string) (*Embedder, error) {
 	return &Embedder{
 		session:   session,
 		tokenizer: tk,
+		Config:    cfg,
 	}, nil
 }
 
@@ -79,7 +74,8 @@ func (e *Embedder) Generate(text string) ([]float32, error) {
 	in3, _ := ort.NewTensor[int64](shape, tokenTypeIds)
 	defer in3.Destroy()
 
-	outputShape := ort.NewShape(1, seqLen, 384)
+	// 动态维度输出
+	outputShape := ort.NewShape(1, seqLen, int64(e.Config.ModelDim))
 	outputTensor, _ := ort.NewEmptyTensor[float32](outputShape)
 	defer outputTensor.Destroy()
 
@@ -88,28 +84,25 @@ func (e *Embedder) Generate(text string) ([]float32, error) {
 		return nil, err
 	}
 
-	// --- 🚀 核心改进 1: Mean Pooling (平均池化) ---
-	// 将 [1, seqLen, 384] 的张量压缩为 [384] 的向量
 	allData := outputTensor.GetData()
-	pooledVec := make([]float32, 384)
+	pooledVec := make([]float32, e.Config.ModelDim)
 	var validTokenCount float32 = 0
 
 	for i := 0; i < int(seqLen); i++ {
-		// 只对非 Padding 的 Token 进行平均 (依据 attentionMask)
 		if attentionMask[i] == 1 {
 			validTokenCount++
-			for j := 0; j < 384; j++ {
-				pooledVec[j] += allData[i*384+j]
+			for j := 0; j < e.Config.ModelDim; j++ {
+				// 正确处理动态偏移量
+				pooledVec[j] += allData[i*e.Config.ModelDim+j]
 			}
 		}
 	}
 
-	for j := 0; j < 384; j++ {
+	for j := 0; j < e.Config.ModelDim; j++ {
 		pooledVec[j] /= validTokenCount
 	}
 
-	// --- 🚀 核心改进 2: L2 Normalization (L2 归一化) ---
-	// 确保向量模长为 1，极大提升余弦相似度检索的准确性
+	// L2 归一化逻辑保持一致...
 	var normSq float32
 	for _, v := range pooledVec {
 		normSq += v * v
