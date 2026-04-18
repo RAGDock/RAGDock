@@ -16,6 +16,10 @@ func ProcessImage(cfg *config.AppConfig, filePath string) (Chunk, error) {
 		return Chunk{}, fmt.Errorf("vision model processing failed: %v", err)
 	}
 
+	if description == "" {
+		return Chunk{}, fmt.Errorf("model returned no content for the image")
+	}
+
 	// Wrap the VLM output into a standard searchable Chunk
 	return Chunk{
 		Content: description,

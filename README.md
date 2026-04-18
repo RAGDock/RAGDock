@@ -60,6 +60,21 @@ Download and place your chosen embedding model and its tokenizer:
 
 ---
 
+## Verified Models
+
+RAGDock is designed to be model-agnostic, but the following models have been specifically tested and verified for stability and performance:
+
+### Vision Language Models (VLM)
+*Used for image indexing and semantic description.*
+- **minicpm-v:8b-2.6-q4_K_M**: Excellent OCR and scene description capabilities.
+
+### RAG Chat Models
+*Used for context-aware conversation and document interrogation.*
+- **gemma2:e4b**: Strong reasoning and factual accuracy.
+- **qwen2.5:1.5b**: Highly efficient for systems with limited resources.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
