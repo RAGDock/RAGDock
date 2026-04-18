@@ -1,119 +1,107 @@
-# **SiftRAG**
+# RAGDock
 
-[English](https://www.google.com/search?q=%23english) | [中文](https://www.google.com/search?q=%23chinese)
+> **The Universal Local RAG Hub for Your Private Knowledge Base.**  
+> *Privacy-first, Model-agnostic, and Lightweight.*
 
-\<a name="english"\>\</a\>
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/RAGDock/RAGDock)](https://go.dev/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://github.com/RAGDock/RAGDock)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/RAGDock/RAGDock/pulls)
 
-## **English**
+RAGDock is a high-performance, cross-platform desktop application that transforms your local documents into a searchable, intelligent knowledge base. Built with Go, Wails, and SQLite, it provides a "dock" where you can plug in any local LLM (via Ollama) or embedding model (via ONNX) to interact with your data—100% offline.
 
-**Sift** is a lightweight, privacy-first, and local-only desktop RAG (Retrieval-Augmented Generation) knowledge base. It allows you to perform semantic searches and chat with your local Markdown documents without any data leaving your machine.
+---
 
-### **✨ Key Features**
+## Key Features
 
-* **Local-first RAG**: Powered by Ollama (LLM) and ONNX (Embeddings) for 100% offline privacy.
-* **Smart Indexing**: Automatically splits Markdown files by headers or paragraphs for precise retrieval.
-* **Real-time Monitoring**: Uses fsnotify to monitor folder changes and auto-index new or modified files.
-* **High-Performance Vector Search**: Leverages sqlite-vec for efficient local vector operations.
-* **Minimalist UI**: A clean black-and-white interface built with Wails and Svelte.
+- **Model Agnostic**: Seamlessly switch between different LLMs via [Ollama](https://ollama.com/) or use built-in ONNX models for embeddings. No vendor lock-in.
+- **Privacy by Design**: All data stays on your machine. Parsing, vectorization, and inference happen entirely locally.
+- **Lightweight & Fast**: Powered by a Go backend and a specialized SQLite vector extension for sub-millisecond retrieval.
+- **True Cross-Platform**: Optimized binaries for Windows, macOS (Intel/Apple Silicon), and Linux.
+- **Multi-Format Support**: Intelligent parsing for Markdown, PDF, TXT, and images.
+- **Modern UI/UX**: A clean, intuitive interface built with Svelte and Wails for a native desktop experience.
 
-### **🏗️ Tech Stack**
+---
 
-* **Backend**: Go, Wails v2
-* **Database**: SQLite \+ [sqlite-vec](https://www.google.com/search?q=https://github.com/asg017/sqlite-vec)
-* **Embedding Model**: [BGE-Micro-v2](https://www.google.com/search?q=https://huggingface.co/BAAI/bge-micro-v2) (via ONNX Runtime)
-* **Frontend**: Svelte, Vite, Tailwind CSS
-* **LLM Engine**: [Ollama](https://www.google.com/search?q=https://ollama.com/)
+## Architecture
 
-### **📂 Project Structure**
+RAGDock acts as the orchestration layer between your data and your models:
 
-sift-desktop/  
-├── app.go              \# Main Wails application logic (Bridge)  
-├── main.go             \# Application entry point  
-├── internal/  
-│   ├── db/             \# SQLite initialization & Vector extension loading  
-│   ├── llm/            \# Ollama API client & Streaming logic  
-│   ├── model/          \# ONNX Embedding engine (Mean Pooling & L2 Norm)  
-│   └── parser/         \# Markdown chunking logic (Header & Paragraph)  
-├── resources/  
-│   ├── lib/            \# External DLLs (onnxruntime.dll, vec0.dll)  
-│   └── models/         \# AI Models (model.onnx, tokenizer.json)  
-├── frontend/           \# Svelte UI source code  
-└── build/              \# Final binary build output
+1.  **Ingestion**: Documents are parsed and cleaned locally.
+2.  **Vectorization**: Text chunks are converted into embeddings using local ONNX models.
+3.  **Storage**: Vectors and metadata are stored in a local SQLite database with `vec0` extensions.
+4.  **Retrieval**: Context-aware search finds the most relevant snippets for your query.
+5.  **Generation**: Local LLMs (Ollama) generate precise answers based on the retrieved context.
 
-### **🚀 Getting Started**
+---
 
-#### **Prerequisites**
+## Quick Start
 
-1. **Ollama**: Install and run [Ollama](https://www.google.com/search?q=https://ollama.com/).
-    * Pull your preferred model: ollama pull qwen2.5:3b (or your custom model name).
-2. **Go**: Install Go 1.21+.
-3. **Node.js**: Install Node.js 18+ and npm.
-4. **Wails**: Install Wails CLI: go install github.com/wailsapp/wails/v2/cmd/wails@latest.
+### Prerequisites
+- [Ollama](https://ollama.com/) installed and running.
+- Modern OS (Windows 10+, macOS 12+, or mainstream Linux).
 
-#### **Setup**
+### Installation
+1.  **Download**: Get the latest release for your platform from the [Releases](https://github.com/RAGDock/RAGDock/releases) page.
+2.  **Launch**: Run the executable. RAGDock will automatically initialize the local environment.
+3.  **Connect**: Select your preferred model from settings (e.g., `llama3`, `mistral`).
+4.  **Ingest**: Drag and drop folders or files into the "Knowledge" tab.
+5.  **Chat**: Start asking questions about your data.
 
-1. Clone the repository.
-2. Place onnxruntime.dll and vec0.dll into resources/lib/.
-3. Place your BGE ONNX model and tokenizer.json into resources/models/.
-4. Run in development mode:  
-   wails dev
+---
 
-\<a name="chinese"\>\</a\>
+## Development
 
-## **中文**
+To build RAGDock from source:
 
-**Sift (EchoVault)** 是一款轻量级、隐私至上、全本地运行的桌面端 RAG（检索增强生成）知识库。它让你可以通过语义搜索与本地 Markdown 文档进行对话，所有数据均不会离开你的计算机。
+```bash
+# Clone the repository
+git clone https://github.com/RAGDock/RAGDock.git
+cd RAGDock
 
-### **✨ 核心特性**
+# Install frontend dependencies
+cd frontend
+npm install
 
-* **本地优先 RAG**: 由 Ollama (LLM) 和 ONNX (Embeddings) 驱动，实现 100% 离线隐私保护。
-* **智能索引**: 自动按标题或段落切分 Markdown 文件，确保检索精度。
-* **实时监控**: 利用 fsnotify 监控文件夹变动，自动索引新增或修改的文件。
-* **高性能向量搜索**: 使用 sqlite-vec 扩展实现高效的本地向量运算。
-* **极简 UI**: 使用 Wails 和 Svelte 构建的黑白极简风格界面。
+# Build and run with Wails
+cd ..
+wails dev
+```
 
-### **🏗️ 技术栈**
+*Required: Go 1.21+, Node.js 18+, and Wails CLI.*
 
-* **后端**: Go, Wails v2
-* **数据库**: SQLite \+ [sqlite-vec](https://www.google.com/search?q=https://github.com/asg017/sqlite-vec)
-* **嵌入模型**: [BGE-Micro-v2](https://www.google.com/search?q=https://huggingface.co/BAAI/bge-micro-v2) (通过 ONNX Runtime 运行)
-* **前端**: Svelte, Vite, Tailwind CSS
-* **LLM 引擎**: [Ollama](https://www.google.com/search?q=https://ollama.com/)
+---
 
-### **📂 项目文件结构**
+## Roadmap
 
-sift-desktop/  
-├── app.go              \# Wails 应用主逻辑（桥接 Go 与 JS）  
-├── main.go             \# 程序入口  
-├── internal/  
-│   ├── db/             \# SQLite 初始化与向量扩展加载  
-│   ├── llm/            \# Ollama 接口调用与流式逻辑  
-│   ├── model/          \# ONNX 嵌入引擎（包含 Mean Pooling 与 L2 归一化）  
-│   └── parser/         \# Markdown 切片逻辑（支持标题与段落）  
-├── resources/  
-│   ├── lib/            \# 外部 DLL 依赖 (onnxruntime.dll, vec0.dll)  
-│   └── models/         \# AI 模型文件 (model.onnx, tokenizer.json)  
-├── frontend/           \# Svelte UI 源码  
-└── build/              \# 编译生成的二进制文件
+- [ ] **Hybrid Search**: Combine keyword search with vector search for higher accuracy.
+- [ ] **Plugin System**: Support for custom document parsers (Excel, PowerPoint, etc.).
+- [ ] **Multi-Agent RAG**: Advanced reasoning steps for complex queries.
+- [ ] **Mobile Client**: Companion app for viewing synced local knowledge.
 
-### **🚀 快速开始**
+---
 
-#### **环境准备**
+## Contributing
 
-1. **Ollama**: 安装并运行 [Ollama](https://www.google.com/search?q=https://ollama.com/)。
-    * 下载模型: ollama pull qwen2.5:3b (或你在代码中指定的自定义模型名)。
-2. **Go**: 安装 Go 1.22+。
-3. **Node.js**: 安装 Node.js 18+ 及 npm。
-4. **Wails**: 安装 Wails CLI: go install github.com/wailsapp/wails/v2/cmd/wails@latest。
+Contributions are welcome. Please feel free to:
+1. Fork the Project.
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`).
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`).
+4. Push to the Branch (`git push origin feature/AmazingFeature`).
+5. Open a Pull Request.
 
-#### **安装运行**
+---
 
-1. 克隆仓库。
-2. 将 onnxruntime.dll 和 vec0.dll 放入 resources/lib/ 目录。
-3. 将 BGE ONNX 模型文件和 tokenizer.json 放入 resources/models/ 目录。
-4. 启动开发模式:  
-   wails dev
+## License
 
-### **📄 开源协议**
+Distributed under the Apache License 2.0. See `LICENSE` for more information.
 
-本项目采用 [MIT License](https://www.google.com/search?q=LICENSE) 协议。
+---
+
+## Contact
+
+**RAGDock Team** - [GitHub](https://github.com/RAGDock)
+
+Project Link: [https://github.com/RAGDock/RAGDock](https://github.com/RAGDock/RAGDock)
+
+*"Empowering everyone with their own local intelligence hub."*
