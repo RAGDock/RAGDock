@@ -35,10 +35,36 @@ RAGDock acts as the orchestration layer between your data and your models:
 
 ---
 
+## Resource Setup
+
+For RAGDock to function correctly, specific system libraries and model files must be placed in the `resources` directory. These are excluded from the repository due to size and platform-specific requirements.
+
+### 1. System Libraries (`resources/lib/`)
+Place the required dynamic libraries for your operating system:
+
+| File Name | Purpose | Location |
+| :--- | :--- | :--- |
+| `libonnxruntime.dylib` / `.so` / `.dll` | ONNX Runtime engine | `resources/lib/` |
+| `vec0.dylib` / `.so` / `.dll` | SQLite vector search extension | `resources/lib/` |
+
+- **ONNX Runtime**: Download from [Microsoft ONNX Runtime Releases](https://github.com/microsoft/onnxruntime/releases).
+- **SQLite vec0**: Obtain from the [sqlite-vec](https://github.com/asg017/sqlite-vec) project.
+
+### 2. Embedding Models (`resources/models/`)
+Download and place your chosen embedding model and its tokenizer:
+
+| File Name | Description | Location |
+| :--- | :--- | :--- |
+| `model.onnx` | ONNX-format embedding model (e.g., BGE-Small) | `resources/models/` |
+| `tokenizer.json` | JSON configuration for the tokenizer | `resources/models/` |
+
+---
+
 ## Quick Start
 
 ### Prerequisites
 - [Ollama](https://ollama.com/) installed and running.
+- Correct libraries and models placed in `resources/` (see **Resource Setup** above).
 - Modern OS (Windows 10+, macOS 12+, or mainstream Linux).
 
 ### Installation
@@ -58,6 +84,8 @@ To build RAGDock from source:
 # Clone the repository
 git clone https://github.com/RAGDock/RAGDock.git
 cd RAGDock
+
+# Ensure resources/lib and resources/models are populated (see Resource Setup)
 
 # Install frontend dependencies
 cd frontend
