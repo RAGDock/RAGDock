@@ -49,3 +49,6 @@ logs/
 *.iml
 *.swp
 *.bak
+
+sift_rag.iml
+data_source_mapping.xml

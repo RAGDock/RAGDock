@@ -26,7 +26,7 @@ frontend/.env
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-*.md5                  # 💡 新增：忽略 MD5 校验缓存
+*.md5
 
 # --- Sift 业务相关 (重要) ---
 # 数据库文件 (包含你的私人文档索引，严禁上传)
@@ -49,3 +49,6 @@ logs/
 *.iml
 *.swp
 *.bak
+
+sift_rag.iml
+data_source_mapping.xml
