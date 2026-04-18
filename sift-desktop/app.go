@@ -23,8 +23,8 @@ import (
 
 type App struct {
 	ctx        context.Context
-	cfg        *config.AppConfig  // ✅ 新增配置支持
-	cancelFunc context.CancelFunc // ✅ 新增：用于存放当前请求的取消函数
+	cfg        *config.AppConfig
+	cancelFunc context.CancelFunc
 	mgr        *db.Manager
 	embedder   *model.Embedder
 	watcher    *fsnotify.Watcher
@@ -81,11 +81,16 @@ func (a *App) startWatcher(path string) {
 				if !ok {
 					return
 				}
-				// 监听创建或写入，仅处理 .md 文件
-				if (event.Op&fsnotify.Create == fsnotify.Create || event.Op&fsnotify.Write == fsnotify.Write) &&
-					strings.HasSuffix(strings.ToLower(event.Name), ".md") {
+
+				fileName := strings.ToLower(event.Name)
+				// 扩展：支持图片和 Markdown
+				isSupported := strings.HasSuffix(fileName, ".md") ||
+					strings.HasSuffix(fileName, ".jpg") ||
+					strings.HasSuffix(fileName, ".jpeg") ||
+					strings.HasSuffix(fileName, ".png")
+
+				if (event.Op&fsnotify.Create == fsnotify.Create || event.Op&fsnotify.Write == fsnotify.Write) && isSupported {
 					a.indexSingleFile(event.Name)
-					runtime.EventsEmit(a.ctx, "file_synced", "✅ 已同步文件: "+filepath.Base(event.Name))
 				}
 			case err, ok := <-a.watcher.Errors:
 				if !ok {
@@ -104,21 +109,40 @@ func (a *App) indexSingleFile(path string) {
 		return
 	}
 
-	chunks, err := parser.ParseMarkdown(path)
+	var chunks []parser.Chunk
+	var err error
+	ext := strings.ToLower(filepath.Ext(path))
+
+	// 1. 根据文件类型分发任务
+	if ext == ".md" {
+		chunks, err = parser.ParseMarkdown(path)
+	} else {
+		// 图片语意化处理
+		// 注意：此处假设你已按前文建议在 internal/parser 下创建了 ProcessImage
+		var chunk parser.Chunk
+		chunk, err = parser.ProcessImage(a.cfg, path)
+		if err == nil {
+			chunks = []parser.Chunk{chunk}
+		}
+	}
+
 	if err != nil {
-		fmt.Printf("❌ 解析失败: %v\n", err)
+		fmt.Printf("❌ 解析失败 [%s]: %v\n", path, err)
+		runtime.EventsEmit(a.ctx, "file_synced", "❌ 解析失败: "+filepath.Base(path))
 		return
 	}
 
-	// 清理旧索引
+	// 2. 清理旧索引
 	a.mgr.Conn.Exec("DELETE FROM vec_idx WHERE rowid IN (SELECT id FROM documents WHERE file_path = ?)", path)
 	a.mgr.Conn.Exec("DELETE FROM documents WHERE file_path = ?", path)
 
+	// 3. 统一入库
 	for _, c := range chunks {
 		if c.Content == "EMPTY_IGNORE" {
 			continue
 		}
 
+		// 生成 384 维向量（无论文字还是图片描述都统一维度）
 		vec, err := a.embedder.Generate(c.Content)
 		if err != nil {
 			continue
@@ -132,17 +156,27 @@ func (a *App) indexSingleFile(path string) {
 		}
 		docID, _ := res.LastInsertId()
 
+		// 存入向量索引表
 		_, err = a.mgr.Conn.Exec("INSERT INTO vec_idx(rowid, embedding) VALUES(?, ?)",
 			docID, Float32ToByte(vec))
 		if err != nil {
 			fmt.Printf("❌ vec_idx 写入失败: %v\n", err)
 		}
+
+		// 在此处统一触发同步成功的事件
+		msg := "✅ 文档已同步: "
+		if strings.HasSuffix(strings.ToLower(path), ".md") {
+			msg = "📄 文档已同步: "
+		} else {
+			msg = "🖼️ 图片语意索引完成: " // 针对 MiniCPM-V 处理后的提示
+		}
+
+		runtime.EventsEmit(a.ctx, "file_synced", msg+filepath.Base(path))
 	}
 }
 
 // SearchAndAsk 处理 RAG 查询，支持多轮对话与流式输出 query: 当前用户提问内容 history: 之前的对话历史记录
 func (a *App) SearchAndAsk(query string, history []llm.Message) error {
-	// ✅ 修正：增加 nil 检查，防止 invalid memory address 报错
 	if a.embedder == nil {
 		return fmt.Errorf("嵌入模型未成功加载，请检查资源文件")
 	}
@@ -183,7 +217,8 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 	for rows.Next() {
 		var heading, content string
 		if err := rows.Scan(&heading, &content); err == nil {
-			contextBuilder.WriteString(fmt.Sprintf("\n### %s\n%s\n", heading, content))
+			// 将 ### 替换为更清晰的标签，帮助模型区分文本和图片语意
+			contextBuilder.WriteString(fmt.Sprintf("\n【资料来源：%s】\n%s\n", heading, content))
 		}
 	}
 
@@ -195,7 +230,7 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 	// 5. 启动流式请求
 	// 将 searchCtx 传入，以便支持用户手动中止
 	err = llm.StreamOllama(searchCtx, a.cfg, contextText, history, query, func(token llm.GenerateResponse) {
-		// ✅ 通过 Wails 事件系统将实时 Token 发送至前端
+		// 通过 Wails 事件系统将实时 Token 发送至前端
 		// 包含 token.Thinking (思考内容) 和 token.Response (正式回答)
 		runtime.EventsEmit(a.ctx, "llm_token", token)
 	})
@@ -215,7 +250,7 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 // StopSearch 供前端调用的中止方法
 func (a *App) StopSearch() {
 	if a.cancelFunc != nil {
-		a.cancelFunc() // ✅ 核心：触发 context 取消信号
+		a.cancelFunc() // 触发 context 取消信号
 		fmt.Println("🛑 用户手动中止了模型输出")
 	}
 }
@@ -230,14 +265,21 @@ func (a *App) SelectAndIndexFolder() (string, error) {
 	}
 
 	go a.indexDirectory(folderPath)
-	go a.startWatcher(folderPath) // ✅ 这里现在可以正确被识别了
+	go a.startWatcher(folderPath)
 	return folderPath, nil
 }
 
 func (a *App) indexDirectory(root string) {
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
-			a.indexSingleFile(path)
+		if err == nil && !info.IsDir() {
+			fileName := strings.ToLower(info.Name())
+			// 扩展：扫描时同时处理文档和图片
+			if strings.HasSuffix(fileName, ".md") ||
+				strings.HasSuffix(fileName, ".jpg") ||
+				strings.HasSuffix(fileName, ".jpeg") ||
+				strings.HasSuffix(fileName, ".png") {
+				a.indexSingleFile(path)
+			}
 		}
 		return nil
 	})

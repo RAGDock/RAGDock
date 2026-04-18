@@ -33,7 +33,7 @@ func LoadConfig() *AppConfig {
 	_ = godotenv.Load()
 
 	return &AppConfig{
-		// ✅ 修正：环境变量键名与 .env 保持全大写一致
+		// 环境变量键名与 .env 保持全大写一致
 		OllamaURL:           getEnv("OLLAMA_URL", "http://localhost:11434"),
 		OllamaModel:         getEnv("OLLAMA_MODEL", "qwen2.5:1.5b"),
 		EmbedderModel:       getEnv("EMBEDDER_MODEL", "bge-m3"),

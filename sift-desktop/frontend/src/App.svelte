@@ -23,7 +23,7 @@
         let lastMsg = messages[messages.length - 1];
 
         if (lastMsg && lastMsg.role === 'assistant') {
-            // ✅ 分离存储：如果是思考内容则存入 thinking，正式回答存入 content
+            // 分离存储：如果是思考内容则存入 thinking，正式回答存入 content
             if (token.thinking) {
                 lastMsg.thinking = (lastMsg.thinking || "") + token.thinking;
             } else if (token.response) {
@@ -61,7 +61,7 @@
         // A. 将用户提问加入列表
         messages = [...messages, { role: "user", content: userQuery }];
 
-        // B. ✅ 关键：预先占位一条助手消息，用于接收后续的流式 token
+        // B. 预先占位一条助手消息，用于接收后续的流式 token
         messages = [...messages, {
             role: "assistant",
             content: "",
@@ -74,7 +74,7 @@
         status = "🧠 Sift 正在思考中...";
 
         try {
-            // C. ✅ 传递当前问题和历史记录。
+            // C. 传递当前问题和历史记录。
             // 历史记录不包含当前这轮(最后两条)，所以用 slice(0, -2)
             await SearchAndAsk(userQuery, messages.slice(0, -2));
             status = "✅ 已回答";
@@ -93,7 +93,7 @@
         }
     }
 
-    // ✅ 新增：手动中止搜索
+    // 手动中止搜索
     async function handleStop() {
         await StopSearch();
         isSearching = false;
@@ -225,13 +225,13 @@
     .message-row.user { border-left: 2px solid #121212; padding-left: 20px; }
     .message-row.assistant { background: #fafafa; padding: 25px; border-radius: 20px; border: 1px solid #eee; text-align: left; }
 
-    /* ✅ 思考气泡：靠右、窄宽度、特定圆角 */
+    /* 思考气泡：靠右、窄宽度、特定圆角 */
     .thinking-wrapper { display: flex; justify-content: flex-end; width: 100%; margin-top: -10px; }
     .message-row.assistant.thinking { width: auto; min-width: 100px; padding: 15px 25px; border-radius: 20px 20px 5px 20px; background: #f0f0f0; border: none; }
 
     .meta { font-size: 10px; font-weight: 800; color: #bbb; letter-spacing: 1px; margin: 0; }
 
-    /* ✅ 三点跳动动画关键 CSS */
+    /* 三点跳动动画关键 CSS */
     .typing-indicator { display: flex; gap: 5px; padding-top: 5px; }
     .typing-indicator span {
         width: 6px; height: 6px; background: #999; border-radius: 50%;
@@ -245,7 +245,7 @@
         40% { transform: scale(1.0); }
     }
 
-    /* ✅ 停止按钮样式：醒目的方块图标 */
+    /* 停止按钮样式：醒目的方块图标 */
     .stop-btn {
         background: #000000; /* 红色警告色 */
         color: #fff;
@@ -267,7 +267,7 @@
         border-radius: 2px;
     }
 
-    /* ✅ 思考箱专属样式：极致极简 */
+    /* 思考箱专属样式：极致极简 */
     .thinking-box {
         margin-bottom: 15px;
         background: #f8f8f8;

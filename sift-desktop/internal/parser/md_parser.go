@@ -93,7 +93,7 @@ func ParseMarkdown(filePath string) ([]Chunk, error) {
 func buildChunk(body string, path string, headings []string) Chunk {
 	trimmedBody := strings.TrimSpace(body)
 
-	// ✅ 新增：如果内容为空，标记为特殊字符串
+	// 如果内容为空，标记为特殊字符串
 	if trimmedBody == "" {
 		return Chunk{Content: "EMPTY_IGNORE"}
 	}
