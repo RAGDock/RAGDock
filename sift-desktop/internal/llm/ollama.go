@@ -7,12 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 
 	"sift.local/internal/config" // 引入配置包
 )
@@ -44,57 +41,6 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// AskOllama 增加 cfg 参数
-// 修改函数签名，接收历史记录
-func AskOllama(cfg *config.AppConfig, context string, history []Message, question string) (string, error) {
-	var historyStr strings.Builder
-	for _, msg := range history {
-		roleName := "用户"
-		if msg.Role == "assistant" {
-			roleName = "助手"
-		}
-		historyStr.WriteString(fmt.Sprintf("%s: %s\n", roleName, msg.Content))
-	}
-
-	fullPrompt := fmt.Sprintf(`你是 Sift 知识库助手。请严谨的根据提供的资料和对话历史回答用户的问题，绝对不能胡编乱造或回复不想关的内容。
-【参考资料】：%s
-【对话历史】：
-%s
-【当前问题】：%s`, context, historyStr.String(), question)
-
-	reqBody := GenerateRequest{
-		Model:  cfg.OllamaModel, // 使用配置中的模型名
-		Prompt: fullPrompt,
-		Stream: true,
-	}
-
-	jsonData, _ := json.Marshal(reqBody)
-	// 使用配置中的 URL
-	apiURL := fmt.Sprintf("%s/api/generate", cfg.OllamaURL)
-	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("连接 Ollama 失败: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// 流式读取逻辑保持不变...
-	decoder := json.NewDecoder(resp.Body)
-	var fullResponse strings.Builder
-	for {
-		var genResp GenerateResponse
-		if err := decoder.Decode(&genResp); err == io.EOF {
-			break
-		} else if err != nil {
-			return "", err
-		}
-		fullResponse.WriteString(genResp.Response)
-	}
-
-	re := regexp.MustCompile(`(?s)<think>.*?</think>`)
-	cleanResponse := re.ReplaceAllString(fullResponse.String(), "")
-	return strings.TrimSpace(cleanResponse), nil
-}
-
 // StreamOllama 实现流式调用
 func StreamOllama(ctx context.Context, cfg *config.AppConfig, context string, history []Message, question string, onToken func(GenerateResponse)) error {
 	// 使用极简结构，不再使用长句子约束
@@ -111,12 +57,12 @@ func StreamOllama(ctx context.Context, cfg *config.AppConfig, context string, hi
 ### 用户当前问题:
 %s`, context, question)
 	jsonData, _ := json.Marshal(GenerateRequest{
-		Model:  cfg.OllamaModel,
+		Model:  cfg.RagModel, // 使用 RAG 模型
 		Prompt: fullPrompt,
 		Stream: true,
 		Options: Options{
-			Temperature:   cfg.OllamaTemp,
-			RepeatPenalty: cfg.OllamaRepeatPenalty,
+			Temperature:   cfg.RagTemp,          // 使用 RAG 温度
+			RepeatPenalty: cfg.RagRepeatPenalty, // 使用 RAG 惩罚项
 			TopP:          0.9,
 		},
 	})
@@ -165,17 +111,14 @@ func DescribeImage(cfg *config.AppConfig, filePath string) (string, error) {
 	// 2. 将二进制数据转为 Base64 字符串
 	base64Img := base64.StdEncoding.EncodeToString(imgData)
 
-	// 3. 构造请求，提示词建议针对身份证等证件场景稍作加权
-	prompt := "请识别并提取图片中的所有文字。如果是证件，请列出关键字段信息；如果是场景，请详细描述内容。"
-
 	reqBody := GenerateRequest{
-		Model:  cfg.OllamaModel,
-		Prompt: prompt,
-		Images: []string{base64Img}, // 传递编码后的数据
+		Model:  cfg.VlmModel, // ✅ 使用 VLM 模型
+		Prompt: "请识别并提取图片中的所有文字。如果是证件 票据 文稿，请列出关键字段信息；如果是场景，请详细描述内容。",
+		Images: []string{base64Img},
 		Stream: false,
 		Options: Options{
-			Temperature:   0.1,
-			RepeatPenalty: 1.1,
+			Temperature:   cfg.VlmTemp,          // ✅ 使用 VLM 温度
+			RepeatPenalty: cfg.VlmRepeatPenalty, // ✅ 使用 VLM 惩罚项
 		},
 	}
 

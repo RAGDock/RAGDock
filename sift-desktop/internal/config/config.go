@@ -11,11 +11,18 @@ import (
 
 type AppConfig struct {
 	// Ollama 相关配置
-	OllamaURL           string
-	OllamaModel         string
-	RagK                int
-	OllamaTemp          float32
-	OllamaRepeatPenalty float32
+	OllamaURL string
+
+	// VLM 模型配置
+	VlmModel         string
+	VlmTemp          float32
+	VlmRepeatPenalty float32
+
+	// RAG 模型配置
+	RagModel         string
+	RagTemp          float32
+	RagRepeatPenalty float32
+	RagK             int
 
 	// 本地模型与向量配置
 	ModelDir      string
@@ -34,12 +41,21 @@ func LoadConfig() *AppConfig {
 
 	return &AppConfig{
 		// 环境变量键名与 .env 保持全大写一致
-		OllamaURL:           getEnv("OLLAMA_URL", "http://localhost:11434"),
-		OllamaModel:         getEnv("OLLAMA_MODEL", "qwen2.5:1.5b"),
-		EmbedderModel:       getEnv("EMBEDDER_MODEL", "bge-m3"),
-		RagK:                getEnvInt("RAG_K", 5),
-		OllamaTemp:          getEnvFloat("OLLAMA_TEMP", 0.1),
-		OllamaRepeatPenalty: getEnvFloat("OLLAMA_REPEAT_PENALTY", 1.6),
+		OllamaURL: getEnv("OLLAMA_URL", "http://localhost:11434"),
+
+		// VLM 配置
+		VlmModel:         getEnv("VLM_MODEL", "minicpm-v:8b-2.6-q4_K_M"),
+		VlmTemp:          getEnvFloat("VLM_TEMP", 0.1),
+		VlmRepeatPenalty: getEnvFloat("VLM_REPEAT_PENALTY", 1.1),
+
+		// RAG 配置
+		RagModel:         getEnv("RAG_MODEL", "gemma2:9b"),
+		RagTemp:          getEnvFloat("RAG_TEMP", 0.7),
+		RagRepeatPenalty: getEnvFloat("RAG_REPEAT_PENALTY", 1.2),
+		RagK:             getEnvInt("RAG_K", 10),
+
+		// 向量化index模型
+		EmbedderModel: getEnv("EMBEDDER_MODEL", "bge-m3"),
 
 		// 本地路径配置
 		ModelDir:      getEnv("MODEL_DIR", "resources/models"),
