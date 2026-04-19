@@ -62,16 +62,28 @@ Download and place your chosen embedding model and its tokenizer:
 
 ## Verified Models
 
-RAGDock is designed to be model-agnostic, but the following models have been specifically tested and verified for stability and performance:
+RAGDock is designed to be model-agnostic, but the following models have been specifically tested and verified for stability and performance.
+
+### Performance Benchmark (VLM Indexing)
+*Testing Environment: **Mac Mini M4 (16GB RAM)** | **macOS Tahoe 26.4.1 (25E253)***
+
+| Model | Task: Simple Layout (e.g. Podcast Cover) | Task: Complex OCR (High-density Text) | Recommendation |
+| :--- |:-----------------------------------------|:--------------------------------------| :--- |
+| **MiniCPM-V: 8B** (2.6 Q4_K_M) | **~11s**                                 | **~39s (Fastest)**                    | **Best Overall** (Stability & Speed) |
+| **Qwen2.5-VL: 3B** | ~19s                                     | ~77s                                  | Good for limited VRAM |
+| **Qwen3-VL: 2B** | ~41s                                     | ~97s                                  | Strong GUI/Spatial reasoning |
 
 ### Vision Language Models (VLM)
 *Used for image indexing and semantic description.*
-- **minicpm-v:8b-2.6-q4_K_M**: Excellent OCR and scene description capabilities.
+- **minicpm-v:8b-2.6-q4_K_M**: Excellent OCR and scene description capabilities. Excels at Chinese Contents.
+- **qwen2.5vl:3b**: Decent OCR and scene description on multi-languages. Exceptional at semantic layout recovery and producing structured, highly readable documentation.
+- **qwen3-vl:2b**: Decent OCR and scene description on multi-languages. Highly effective at extracting granular UI technical details and metadata with high precision.
 
 ### RAG Chat Models
 *Used for context-aware conversation and document interrogation.*
 - **gemma2:e4b**: Strong reasoning and factual accuracy.
 - **qwen2.5:1.5b**: Highly efficient for systems with limited resources.
+- **erwan2/DeepSeek-R1-Distill-Qwen-1.5B:latest**: Strong reasoning, factual accuracy, great Performance.
 
 ---
 

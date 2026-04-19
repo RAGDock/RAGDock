@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,15 +17,19 @@ import (
 
 // Options defines model parameters for the LLM request
 type Options struct {
-	Temperature   float32 `json:"temperature"`
-	RepeatPenalty float32 `json:"repeat_penalty"`
-	TopP          float32 `json:"top_p"`
+	Temperature     float32 `json:"temperature"`
+	RepeatPenalty   float32 `json:"repeat_penalty"`
+	PresencePenalty float32 `json:"presence_penalty"`
+	NumCtx          int     `json:"num_ctx"`
+	TopK            int     `json:"top_k"`
+	TopP            float32 `json:"top_p"`
 }
 
 // GenerateRequest represents the body of a request to Ollama's /api/generate
 type GenerateRequest struct {
 	Model   string   `json:"model"`
 	Images  []string `json:"images,omitempty"` // Base64 encoded image strings
+	System  string   `json:"system"`
 	Prompt  string   `json:"prompt"`
 	Stream  bool     `json:"stream"`
 	Options Options  `json:"options"`
@@ -32,10 +37,16 @@ type GenerateRequest struct {
 
 // GenerateResponse represents a chunk of the response from Ollama
 type GenerateResponse struct {
-	Model    string `json:"model"`
-	Response string `json:"response"`
-	Thinking string `json:"thinking"` // Captured reasoning chain from modern models
-	Done     bool   `json:"done"`
+	Model              string `json:"model"`
+	Response           string `json:"response"`
+	Thinking           string `json:"thinking,omitempty"` // Captured reasoning chain
+	Done               bool   `json:"done"`
+	TotalDuration      int64  `json:"total_duration,omitempty"`
+	LoadDuration       int64  `json:"load_duration,omitempty"`
+	PromptEvalCount    int    `json:"prompt_eval_count,omitempty"`
+	PromptEvalDuration int64  `json:"prompt_eval_duration,omitempty"`
+	EvalCount          int    `json:"eval_count,omitempty"`
+	EvalDuration       int64  `json:"eval_duration,omitempty"`
 }
 
 // Message defines a single turn in a chat conversation
@@ -47,27 +58,26 @@ type Message struct {
 // StreamOllama handles streaming responses from the Ollama LLM
 func StreamOllama(ctx context.Context, cfg *config.AppConfig, context string, history []Message, question string, onToken func(GenerateResponse)) error {
 	// Construct the prompt using a clean structure to minimize token waste
-	fullPrompt := fmt.Sprintf(`<|think|>
-You are the RAGDock Knowledge Assistant. Use ONLY the provided [Reference Documents] to answer the user's question accurately.
-Guidelines:
-1. Prioritize information most relevant to the query.
-2. If image descriptions are present in the documents, mention them clearly.
-3. Keep the response professional and concise.
+	systemPrompt := `You are the RAGDock Knowledge Assistant. 
+Use ONLY the provided [Reference Documents] to answer. 
+If image descriptions are present, mention them. 
+Keep the response professional and concise.`
 
-### Reference Documents:
-%s
-
-### User Question:
-%s`, context, question)
+	// ✅ Prompt 仅包含数据和问题
+	userPrompt := fmt.Sprintf("### Reference Documents:\n%s\n\n### User Question:\n%s", context, question)
 
 	jsonData, _ := json.Marshal(GenerateRequest{
 		Model:  cfg.RagModel,
-		Prompt: fullPrompt,
+		System: systemPrompt,
+		Prompt: userPrompt,
 		Stream: true,
 		Options: Options{
-			Temperature:   cfg.RagTemp,
-			RepeatPenalty: cfg.RagRepeatPenalty,
-			TopP:          0.9,
+			Temperature:     cfg.RagTemp,
+			RepeatPenalty:   cfg.RagRepeatPenalty,
+			PresencePenalty: cfg.RagPresencePenalty,
+			TopK:            cfg.RagTopK,
+			TopP:            cfg.RagTopP,
+			NumCtx:          4096,
 		},
 	})
 
@@ -103,7 +113,6 @@ Guidelines:
 	return scanner.Err()
 }
 
-// DescribeImage uses a Vision Language Model (VLM) to extract text and semantic meaning from images
 func DescribeImage(cfg *config.AppConfig, filePath string) (string, error) {
 	// 1. Read the image file
 	imgData, err := os.ReadFile(filePath)
@@ -116,12 +125,13 @@ func DescribeImage(cfg *config.AppConfig, filePath string) (string, error) {
 
 	reqBody := GenerateRequest{
 		Model:  cfg.VlmModel,
-		Prompt: "Extract and identify all text and key details from this image. For documents/receipts, list fields; for scenes, describe the content.",
+		Prompt: "Identify all text and describe the content of this image in detail.",
 		Images: []string{base64Img},
 		Stream: false,
 		Options: Options{
-			Temperature:   cfg.VlmTemp,
-			RepeatPenalty: cfg.VlmRepeatPenalty,
+			Temperature:   0.1,
+			RepeatPenalty: 1.1,
+			NumCtx:        8192, // Increase context for large images/long text
 		},
 	}
 
@@ -133,13 +143,35 @@ func DescribeImage(cfg *config.AppConfig, filePath string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	var genResp GenerateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&genResp); err != nil {
-		return "", err
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("ollama returned error status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Log the VLM result for debugging purposes
-	fmt.Printf("VLM successfully parsed content [%s]: %s\n", filepath.Base(filePath), genResp.Response)
+	// Read full body for robust parsing and debugging
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %v", err)
+	}
 
-	return genResp.Response, nil
+	var genResp GenerateResponse
+	if err := json.Unmarshal(bodyBytes, &genResp); err != nil {
+		return "", fmt.Errorf("JSON Unmarshal error: %v | Raw: %s", err, string(bodyBytes))
+	}
+
+	// Capture response or thinking
+	fullContent := genResp.Response
+	if fullContent == "" {
+		fullContent = genResp.Thinking
+	}
+
+	// CRITICAL DIAGNOSTIC: If still empty, print what we got
+	if fullContent == "" {
+		fmt.Printf("DEBUG: Empty Content from VLM. Raw Response: %s\n", string(bodyBytes))
+	} else {
+		fmt.Printf("VLM Processed [%s]: (Thinking: %d, Response: %d, Total: %d chars)\n", 
+			filepath.Base(filePath), len(genResp.Thinking), len(genResp.Response), len(fullContent))
+	}
+
+	return fullContent, nil
 }

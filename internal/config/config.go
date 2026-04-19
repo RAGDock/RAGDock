@@ -20,10 +20,13 @@ type AppConfig struct {
 	VlmRepeatPenalty float32
 
 	// RAG (Retrieval-Augmented Generation) chat model settings
-	RagModel         string
-	RagTemp          float32
-	RagRepeatPenalty float32
-	RagK             int // Number of context snippets to retrieve
+	RagModel           string
+	RagTemp            float32
+	RagRepeatPenalty   float32
+	RagPresencePenalty float32
+	RagTopK            int
+	RagTopP            float32
+	RagK               int // Number of context snippets to retrieve
 
 	// Local embedding model (ONNX) and vector settings
 	ModelDir      string
@@ -52,10 +55,13 @@ func LoadConfig() *AppConfig {
 		VlmRepeatPenalty: getEnvFloat("VLM_REPEAT_PENALTY", 1.1),
 
 		// RAG configuration (chat and knowledge retrieval)
-		RagModel:         getEnv("RAG_MODEL", "gemma2:9b"),
-		RagTemp:          getEnvFloat("RAG_TEMP", 0.7),
-		RagRepeatPenalty: getEnvFloat("RAG_REPEAT_PENALTY", 1.2),
-		RagK:             getEnvInt("RAG_K", 10),
+		RagModel:           getEnv("RAG_MODEL", "qwen2.5:1.5b"),
+		RagTemp:            getEnvFloat("RAG_TEMP", 1.0),
+		RagRepeatPenalty:   getEnvFloat("RAG_REPEAT_PENALTY", 1.2),
+		RagPresencePenalty: getEnvFloat("RAG_PRESENCE_PENALTY", 1.5),
+		RagTopK:            getEnvInt("RAG_TOP_K", 20),
+		RagTopP:            getEnvFloat("RAG_TOP_P", 0.95),
+		RagK:               getEnvInt("RAG_K", 10),
 
 		// Local embedding model name (for reference)
 		EmbedderModel: getEnv("EMBEDDER_MODEL", "bge-m3"),

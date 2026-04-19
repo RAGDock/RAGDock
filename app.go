@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -108,6 +107,9 @@ func (a *App) startWatcher(path string) {
 
 // indexSingleFile processes a single file (Markdown or Image) and updates the database
 func (a *App) indexSingleFile(path string) {
+	startTime := time.Now()
+	metrics := model.PerfMetrics{Action: "index"}
+
 	// Ensure the file is fully written and accessible
 	if err := a.waitUntilReady(path, 5*time.Second); err != nil {
 		fmt.Printf("File is busy: %v\n", err)
@@ -119,17 +121,18 @@ func (a *App) indexSingleFile(path string) {
 	ext := strings.ToLower(filepath.Ext(path))
 
 	// 1. Parse content based on file type
+	parseStart := time.Now()
 	if ext == ".md" {
 		chunks, err = parser.ParseMarkdown(path)
 	} else {
 		// Handle images using the Vision Language Model (VLM)
-		// ProcessImage is assumed to be defined in internal/parser
 		var chunk parser.Chunk
 		chunk, err = parser.ProcessImage(a.cfg, path)
 		if err == nil {
 			chunks = []parser.Chunk{chunk}
 		}
 	}
+	metrics.ParseMs = time.Since(parseStart).Milliseconds()
 
 	if err != nil {
 		fmt.Printf("Parsing failed [%s]: %v\n", path, err)
@@ -137,18 +140,21 @@ func (a *App) indexSingleFile(path string) {
 		return
 	}
 
-	// 2. Clean up existing indices for this file to prevent duplicates
+	// 2. Clean up existing indices
 	a.mgr.Conn.Exec("DELETE FROM vec_idx WHERE rowid IN (SELECT id FROM documents WHERE file_path = ?)", path)
 	a.mgr.Conn.Exec("DELETE FROM documents WHERE file_path = ?", path)
 
-	// 3. Vectorize chunks and insert into database
+	// 3. Vectorize chunks and insert
+	var totalEmbedMs int64
 	for _, c := range chunks {
 		if c.Content == "EMPTY_IGNORE" {
 			continue
 		}
 
-		// Generate 384-dimensional vector for both text and image descriptions
+		embedStart := time.Now()
 		vec, err := a.embedder.Generate(c.Content)
+		totalEmbedMs += time.Since(embedStart).Milliseconds()
+
 		if err != nil {
 			continue
 		}
@@ -156,96 +162,85 @@ func (a *App) indexSingleFile(path string) {
 		res, err := a.mgr.Conn.Exec("INSERT INTO documents(heading, content, file_path) VALUES(?, ?, ?)",
 			c.Heading, c.Content, path)
 		if err != nil {
-			fmt.Printf("Document insertion failed: %v\n", err)
 			continue
 		}
 		docID, _ := res.LastInsertId()
-
-		// Store vector embedding into the virtual index table
-		_, err = a.mgr.Conn.Exec("INSERT INTO vec_idx(rowid, embedding) VALUES(?, ?)",
-			docID, Float32ToByte(vec))
-		if err != nil {
-			fmt.Printf("Vector index insertion failed: %v\n", err)
-		}
-
-		// Notify the frontend of the successful synchronization
-		msg := "Document synced: "
-		if strings.HasSuffix(strings.ToLower(path), ".md") {
-			msg = "Document synced: "
-		} else {
-			msg = "Image semantic indexing complete: "
-		}
-
-		runtime.EventsEmit(a.ctx, "file_synced", msg+filepath.Base(path))
+		a.mgr.Conn.Exec("INSERT INTO vec_idx(rowid, embedding) VALUES(?, ?)", docID, Float32ToByte(vec))
 	}
+
+	metrics.EmbedMs = totalEmbedMs
+	metrics.TotalMs = time.Since(startTime).Milliseconds()
+	runtime.EventsEmit(a.ctx, "perf_metrics", metrics)
+
+	// Notify the frontend of success
+	runtime.EventsEmit(a.ctx, "file_synced", "Synced: "+filepath.Base(path))
 }
 
 // SearchAndAsk handles RAG queries with support for conversation history and streaming output
 func (a *App) SearchAndAsk(query string, history []llm.Message) error {
+	overallStart := time.Now()
+	metrics := model.PerfMetrics{Action: "search"}
+
 	if a.embedder == nil {
-		return fmt.Errorf("embedding model not loaded, please check resource files")
-	}
-	if a.mgr == nil || a.mgr.Conn == nil {
-		return fmt.Errorf("database connection not established")
+		return fmt.Errorf("embedding model not loaded")
 	}
 
-	var searchCtx context.Context
-	searchCtx, a.cancelFunc = context.WithCancel(a.ctx)
-
-	// Ensure the cancel function is cleared when the method exits
-	defer func() {
-		a.cancelFunc = nil
-	}()
-
-	// 1. Vectorize the user's query
+	// 1. Vectorize query
+	embedStart := time.Now()
 	queryVec, err := a.embedder.Generate(query)
+	metrics.EmbedMs = time.Since(embedStart).Milliseconds()
 	if err != nil {
-		return fmt.Errorf("vectorization failed: %v", err)
+		return err
 	}
 
-	// 2. Perform a vector search on the local database (Top-K results)
+	// 2. Local Search
+	searchStart := time.Now()
 	rows, err := a.mgr.Conn.Query(fmt.Sprintf(`
         SELECT d.heading, d.content 
         FROM vec_idx v
         JOIN documents d ON v.rowid = d.id
         WHERE embedding MATCH ? AND k = %d
         ORDER BY distance`, a.cfg.RagK), Float32ToByte(queryVec))
+	metrics.SearchMs = time.Since(searchStart).Milliseconds()
 
 	if err != nil {
-		return fmt.Errorf("database search failed: %v", err)
+		return err
 	}
 	defer rows.Close()
 
-	// 3. Build the context block for the LLM
 	var contextBuilder strings.Builder
 	for rows.Next() {
-		var heading, content string
-		if err := rows.Scan(&heading, &content); err == nil {
-			contextBuilder.WriteString(fmt.Sprintf("\n[Source: %s]\n%s\n", heading, content))
+		var h, c string
+		if err := rows.Scan(&h, &c); err == nil {
+			contextBuilder.WriteString(fmt.Sprintf("\n[Source: %s]\n%s\n", h, c))
 		}
 	}
 
-	contextText := contextBuilder.String()
-	if contextText == "" {
-		contextText = "No relevant local documents found."
-	}
+	// 3. LLM Streaming
+	var searchCtx context.Context
+	searchCtx, a.cancelFunc = context.WithCancel(a.ctx)
+	defer func() { a.cancelFunc = nil }()
 
-	// 4. Start streaming the LLM request via Ollama
-	err = llm.StreamOllama(searchCtx, a.cfg, contextText, history, query, func(token llm.GenerateResponse) {
-		// Emit tokens to the frontend in real-time
+	llmStart := time.Now()
+	var ttftOnce bool
+	err = llm.StreamOllama(searchCtx, a.cfg, contextBuilder.String(), history, query, func(token llm.GenerateResponse) {
+		if !ttftOnce && (token.Response != "" || token.Thinking != "") {
+			metrics.TTFTMs = time.Since(llmStart).Milliseconds()
+			ttftOnce = true
+		}
+
+		if token.Done {
+			metrics.InferenceMs = token.TotalDuration / 1e6 // Nano to Milli
+			metrics.PromptTokens = token.PromptEvalCount
+			metrics.CompletionTokens = token.EvalCount
+		}
 		runtime.EventsEmit(a.ctx, "llm_token", token)
 	})
 
-	if err != nil {
-		// If the error was due to manual cancellation, handle it gracefully
-		if errors.Is(err, context.Canceled) {
-			fmt.Println("Search request cancelled by user")
-			return nil
-		}
-		return err
-	}
+	metrics.TotalMs = time.Since(overallStart).Milliseconds()
+	runtime.EventsEmit(a.ctx, "perf_metrics", metrics)
 
-	return nil
+	return err
 }
 
 // StopSearch allows the frontend to manually abort the LLM generation

@@ -10,7 +10,9 @@
     let path = "";
     let status = "Ready";
     let syncMessage = "";
-    let isSearching = false; // Tracks if the model is currently searching or generating
+    let isSearching = false; 
+    let lastPerf = null; // Store latest performance metrics
+    let showPerf = false; // Toggle for performance overlay
 
     // Conversation structure: { role: 'user'|'assistant', content: '...', thinking: '...' }
     let messages = [];
@@ -34,8 +36,15 @@
         }
     });
 
-    // 2. Listen for background file synchronization events
+    // 2. Listen for performance metrics
+    EventsOn("perf_metrics", (m) => {
+        console.log("Performance Metrics Received:", m);
+        lastPerf = m;
+    });
+
+    // 3. Listen for background file synchronization events
     EventsOn("file_synced", (msg) => {
+        console.log("Sync Message:", msg);
         syncMessage = msg;
         setTimeout(() => { syncMessage = ""; }, 3000);
     });
@@ -122,6 +131,27 @@
             <div class="path-badge" on:click={() => SelectAndIndexFolder().then(p => path = p)}>
                 <span class="dot"></span> {path || "Connect Knowledge Base"}
             </div>
+            {#if lastPerf}
+                <div class="perf-tag" class:active={showPerf} on:click={() => showPerf = !showPerf}>
+                    ⚡ {lastPerf.total_ms}ms
+                    {#if showPerf}
+                        <div class="perf-popover" in:fade>
+                            <div class="perf-title">Last {lastPerf.action.toUpperCase()} Metrics</div>
+                            <div class="perf-grid">
+                                {#if lastPerf.action === 'search'}
+                                    <div class="p-row"><span>TTFT:</span> {lastPerf.ttft_ms}ms</div>
+                                    <div class="p-row"><span>Search:</span> {lastPerf.search_ms}ms</div>
+                                    <div class="p-row"><span>Inference:</span> {lastPerf.inference_ms}ms</div>
+                                    <div class="p-row"><span>Tokens:</span> {lastPerf.prompt_tokens}/{lastPerf.completion_tokens}</div>
+                                {:else}
+                                    <div class="p-row"><span>Parse:</span> {lastPerf.parse_ms}ms</div>
+                                {/if}
+                                <div class="p-row"><span>Embed:</span> {lastPerf.embed_ms}ms</div>
+                            </div>
+                        </div>
+                    {/if}
+                </div>
+            {/if}
             <div class="status-tag" class:active={isSearching}>{status}</div>
         </header>
 
@@ -136,7 +166,7 @@
             {#each messages as msg, i}
                 <div class="message-row {msg.role}" in:fade={{ duration: 300 }}>
                     <div class="message-header">
-                        <div class="meta">{msg.role === 'user' ? 'YOU' : 'RAGDock'}</div>
+                        <div class="meta">{msg.role === 'user' ? 'YOU' : 'RAGDOCK'}</div>
                         {#if msg.role === 'assistant' && msg.content}
                             <button class="copy-btn" on:click={() => copyToClipboard(msg.content, i)}>
                                 {copiedIndex === i ? 'COPIED!' : 'COPY'}
@@ -164,7 +194,7 @@
             {#if isSearching && (!messages[messages.length - 1]?.thinking && !messages[messages.length - 1]?.content)}
                 <div class="thinking-wrapper" in:fade={{ duration: 200 }} out:fade={{ duration: 100 }}>
                     <div class="message-row assistant thinking">
-                        <div class="meta">RAGDock</div>
+                        <div class="meta">RAGDOCK</div>
                         <div class="content">
                             <div class="typing-indicator">
                                 <span></span><span></span><span></span>
@@ -211,6 +241,22 @@
 
     .navbar { display: flex; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; }
     .path-badge { cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+    .perf-tag {
+        cursor: pointer; position: relative; font-size: 11px; background: #f0f0f0; padding: 4px 10px;
+        border-radius: 6px; font-weight: 800; color: #121212; transition: all 0.2s;
+        border: 1px solid #ddd;
+    }
+    .perf-tag:hover, .perf-tag.active { background: #000; color: #fff; border-color: #000; }
+    .perf-popover {
+        position: absolute; top: 35px; right: 0; background: #fff; border: 1px solid #121212;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15); padding: 15px; border-radius: 12px;
+        width: 200px; z-index: 9999; text-align: left;
+        color: #121212; /* Explicitly set dark color to prevent inheritance of white from .active */
+    }
+    .perf-title { font-size: 9px; color: #bbb; font-weight: 900; margin-bottom: 8px; letter-spacing: 0.5px; }
+    .perf-grid { display: flex; flex-direction: column; gap: 6px; }
+    .p-row { font-size: 11px; display: flex; justify-content: space-between; font-family: monospace; }
+    .p-row span { color: #888; margin-right: 10px; }
     .dot { width: 8px; height: 8px; background: #00c853; border-radius: 50%; }
     .status-tag { font-size: 12px; color: #888; }
 
