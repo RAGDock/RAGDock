@@ -38,6 +38,9 @@ type AppConfig struct {
 	// Database settings
 	DbDir  string
 	DbName string
+
+	// Concurrency settings
+	VlmConcurrency int
 }
 
 // LoadConfig reads settings from .env file or uses default values
@@ -45,8 +48,21 @@ func LoadConfig() *AppConfig {
 	// Load environment variables from .env if it exists
 	_ = godotenv.Load()
 
+	// Determine hardware-safe concurrency limit
+	numCPU := runtime.NumCPU()
+	userVlmLimit := getEnvInt("VLM_CONCURRENCY", 2) // Default to 2 for stability
+
+	// Enforce hard ceiling based on CPU cores to prevent system thrashing
+	effectiveVlmLimit := userVlmLimit
+	if effectiveVlmLimit > numCPU {
+		effectiveVlmLimit = numCPU
+	}
+	if effectiveVlmLimit < 1 {
+		effectiveVlmLimit = 1
+	}
+
 	return &AppConfig{
-		// Map environment variables (uppercase) to config struct
+		// ... existing fields ...
 		OllamaURL: getEnv("OLLAMA_URL", "http://localhost:11434"),
 
 		// VLM configuration (e.g., for OCR and image description)
@@ -67,12 +83,13 @@ func LoadConfig() *AppConfig {
 		EmbedderModel: getEnv("EMBEDDER_MODEL", "bge-m3"),
 
 		// Path and technical settings for local models
-		ModelDir:      getEnv("MODEL_DIR", "resources/models"),
-		ModelFilename: getEnv("MODEL_FILENAME", "model.onnx"),
-		TokenizerName: getEnv("TOKENIZER_NAME", "tokenizer.json"),
-		ModelDim:      getEnvInt("MODEL_DIM", 384),
-		DbDir:         getEnv("DB_DIR", "."),
-		DbName:        getEnv("DB_NAME", "ragdock_local.db"),
+		ModelDir:       getEnv("MODEL_DIR", "resources/models"),
+		ModelFilename:  getEnv("MODEL_FILENAME", "model.onnx"),
+		TokenizerName:  getEnv("TOKENIZER_NAME", "tokenizer.json"),
+		ModelDim:       getEnvInt("MODEL_DIM", 384),
+		DbDir:          getEnv("DB_DIR", "."),
+		DbName:         getEnv("DB_NAME", "ragdock_local.db"),
+		VlmConcurrency: effectiveVlmLimit,
 	}
 }
 

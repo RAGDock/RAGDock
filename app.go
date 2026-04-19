@@ -22,12 +22,13 @@ import (
 
 // App defines the main application structure and its state
 type App struct {
-	ctx        context.Context
-	cfg        *config.AppConfig
-	cancelFunc context.CancelFunc
-	mgr        *db.Manager
-	embedder   *model.Embedder
-	watcher    *fsnotify.Watcher
+	ctx          context.Context
+	cfg          *config.AppConfig
+	cancelFunc   context.CancelFunc
+	mgr          *db.Manager
+	embedder     *model.Embedder
+	watcher      *fsnotify.Watcher
+	vlmSemaphore chan struct{} // Global semaphore for rate-limiting heavy VLM/Parsing tasks
 }
 
 // NewApp creates a new instance of the App
@@ -50,14 +51,17 @@ func (a *App) startup(ctx context.Context) {
 	// 1. Load application configuration
 	a.cfg = config.LoadConfig()
 
+	// 2. Initialize the global semaphore for concurrency control
+	a.vlmSemaphore = make(chan struct{}, a.cfg.VlmConcurrency)
+
 	var err error
-	// 2. Initialize the Database Manager
+	// 3. Initialize the Database Manager
 	a.mgr, err = db.NewManager(a.cfg)
 	if err != nil {
 		fmt.Printf("Database initialization failed: %v\n", err)
 	}
 
-	// 3. Initialize the Embedding Model (ONNX)
+	// 4. Initialize the Embedding Model (ONNX)
 	a.embedder, err = model.NewEmbedder(a.cfg)
 	if err != nil {
 		fmt.Printf("Embedding model initialization failed: %v\n", err)
@@ -92,7 +96,8 @@ func (a *App) startWatcher(path string) {
 					strings.HasSuffix(fileName, ".png")
 
 				if (event.Op&fsnotify.Create == fsnotify.Create || event.Op&fsnotify.Write == fsnotify.Write) && isSupported {
-					a.indexSingleFile(event.Name)
+					// Run indexing in background, throttled by the semaphore
+					go a.indexSingleFile(event.Name)
 				}
 			case err, ok := <-a.watcher.Errors:
 				if !ok {
@@ -107,6 +112,21 @@ func (a *App) startWatcher(path string) {
 
 // indexSingleFile processes a single file (Markdown or Image) and updates the database
 func (a *App) indexSingleFile(path string) {
+	ext := strings.ToLower(filepath.Ext(path))
+	isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png"
+
+	if isImage {
+		fmt.Printf("%s [WAIT] Image in queue: [%s]\n", time.Now().Format("3:04:05 PM"), filepath.Base(path))
+	}
+
+	// Acquire semaphore (blocks if full)
+	a.vlmSemaphore <- struct{}{}
+	defer func() { <-a.vlmSemaphore }() // Release when done
+
+	if isImage {
+		fmt.Printf("%s [START] Processing image: [%s]\n", time.Now().Format("3:04:05 PM"), filepath.Base(path))
+	}
+
 	startTime := time.Now()
 	metrics := model.PerfMetrics{Action: "index"}
 
@@ -118,7 +138,6 @@ func (a *App) indexSingleFile(path string) {
 
 	var chunks []parser.Chunk
 	var err error
-	ext := strings.ToLower(filepath.Ext(path))
 
 	// 1. Parse content based on file type
 	parseStart := time.Now()
@@ -171,6 +190,10 @@ func (a *App) indexSingleFile(path string) {
 	metrics.EmbedMs = totalEmbedMs
 	metrics.TotalMs = time.Since(startTime).Milliseconds()
 	runtime.EventsEmit(a.ctx, "perf_metrics", metrics)
+
+	if isImage {
+		fmt.Printf("%s [FINISH] Image processed: [%s] total: %dms\n", time.Now().Format("3:04:05 PM"), filepath.Base(path), metrics.TotalMs)
+	}
 
 	// Notify the frontend of success
 	runtime.EventsEmit(a.ctx, "file_synced", "Synced: "+filepath.Base(path))
@@ -268,6 +291,8 @@ func (a *App) SelectAndIndexFolder() (string, error) {
 
 // indexDirectory recursively scans a directory for supported files
 func (a *App) indexDirectory(root string) {
+	// Pre-scan all valid file paths to manage them in our task pool
+	var filesToIndex []string
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() {
 			fileName := strings.ToLower(info.Name())
@@ -275,11 +300,18 @@ func (a *App) indexDirectory(root string) {
 				strings.HasSuffix(fileName, ".jpg") ||
 				strings.HasSuffix(fileName, ".jpeg") ||
 				strings.HasSuffix(fileName, ".png") {
-				a.indexSingleFile(path)
+				filesToIndex = append(filesToIndex, path)
 			}
 		}
 		return nil
 	})
+
+	// Launch each task in its own goroutine
+	// The a.vlmSemaphore inside indexSingleFile will handle the throttling automatically
+	for _, path := range filesToIndex {
+		go a.indexSingleFile(path)
+	}
+
 	runtime.EventsEmit(a.ctx, "index_complete", "Directory indexing complete")
 }
 
