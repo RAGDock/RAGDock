@@ -88,17 +88,18 @@ For RAGDock to function correctly, specific system libraries and model files mus
 
 ## Verified Models
 
-| Category | Model Name (Ollama)             | RAG | VLM | Accuracy | **RAM Needed** | Strengths                                          |
-|:---|:--------------------------------|:---:|:---:|:---|:---------------|:---------------------------------------------------|
-| **VLM** | `qwen2.5-vl:7b`                 | ✅ | ✅ | **Top** | **~8.5 GB**    | Exceptional OCR & layout recovery.                 |
-| **VLM** | `qwen3-vl:4b-instruct-q4_K_M`   | ✅ | ✅ | **Top** | **~5.2 GB**    | Balanced power & memory usage. .                   |
-| **VLM** | `qwen2.5vl:3b`                  | ✅ | ✅ | Good | **~4.8 GB**    | Best balance for 8GB VRAM Macs.                    |
-| **VLM** | `qwen3-vl:2b`                   | ✅ | ✅ | Good | **~3.6 GB**    | Works fine for 6GB VRAM.                           |
-| **VLM** | `minicpm-v:8b-2.6-q4_K_M`       | ✅ | ✅ | Very Good | **~7.2 GB**    | **Fastest** VLM indexing speed.                    |
-| **RAG** | `gemma4:e4b`                    | ✅ | ✅ | Very Good | **~9.6 GB**    | Strong performance & factual accuracy for OCR/RAG. |
-| **RAG** | `gemma4:e2b`                    | ✅ | ✅ | Very Good | **~7.2 GB**    | very capable for OCR/RAG.                          |
-| **Chat** | `qwen2.5:1.5b`                  | ✅ | ❌ | Good | **~1.6 GB**    | Ultra-fast on low-resource hardware.               |
-| **Reasoning** | `DeepSeek-R1-Distill-Qwen-1.5B` | ✅ | ❌ | Very Good | **~1.8 GB**    | High-speed logic & structured output.              |
+| Category       | Model Name (Ollama)             | RAG | VLM | Accuracy | **RAM Needed** | Strengths                                                                                                 |
+|:---------------|:--------------------------------|:---:|:---:|:---|:---------------|:----------------------------------------------------------------------------------------------------------|
+| **Multimodal** | `qwen3-vl:4b-instruct-q4_K_M`   | ✅ | ✅ | **Top** | **~5.2 GB**    | Balanced power & memory usage. .                                                                          |
+| **Multimodal** | `qwen3-vl:2b`                   | ✅ | ✅ | Good | **~3.6 GB**    | Works fine for 6GB VRAM.                                                                                  |
+| **Multimodal** | `qwen2.5-vl:7b`                 | ✅ | ✅ | **Top** | **~8.5 GB**    | Exceptional OCR & layout recovery.                                                                        |
+| **Multimodal** | `qwen2.5vl:3b`                  | ✅ | ✅ | Good | **~2.3 GB**    | Best balance for 8GB VRAM Macs.                                                                           |
+| **Multimodal** | `blaifa/Nanonets-OCR-s:latest`       | ✅ | ✅ | Very Good | **~2.2 GB**    | Fast and accurate. A Qwen2.5VL:3b finetune designed to generate structured markdown files from documents. |
+| **Multimodal** | `minicpm-v:8b-2.6-q4_K_M`       | ✅ | ✅ | Very Good | **~7.2 GB**    | **Fastest** VLM indexing speed. Excels at Chinese contents.                                               |
+| **Multimodal** | `gemma4:e4b`                    | ✅ | ✅ | Very Good | **~9.6 GB**    | Strong performance & factual accuracy for OCR/RAG.                                                        |
+| **Multimodal** | `gemma4:e2b`                    | ✅ | ✅ | Very Good | **~7.2 GB**    | very capable for OCR/RAG.                                                                                 |
+| **Text**       | `qwen2.5:1.5b`                  | ✅ | ❌ | Good | **~1.6 GB**    | Ultra-fast on low-resource hardware.                                                                      |
+| **Text**  | `DeepSeek-R1-Distill-Qwen-1.5B` | ✅ | ❌ | Very Good | **~1.8 GB**    | High-speed logic & structured output.                                                                     |
 
 > **Hardware Note**: For **VLM (Vision)** models, additional 1.5GB–2.5GB RAM is consumed by vision encoders and image tokens. On Apple Silicon (Mac), this is handled via Unified Memory. On Windows/Linux, ensure your dedicated GPU VRAM is at least 1GB larger than the "RAM Needed" for a smooth experience.
 
