@@ -16,6 +16,7 @@ import (
 	"github.com/RAGDock/RAGDock/internal/model"
 	"github.com/RAGDock/RAGDock/internal/parser"
 
+	"github.com/RAGDock/RAGDock/internal/utils"
 	"github.com/fsnotify/fsnotify"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -110,7 +111,7 @@ func (a *App) startWatcher(path string) {
 					if event.Op&fsnotify.Write == fsnotify.Write {
 						op = "modified"
 					}
-					fmt.Printf("%s | [WATCH] | file %s [%s] size: %s\n", time.Now().Format("15:04:05:000"), op, filepath.Base(event.Name), sizeStr)
+					utils.Log("WATCH", "file %s [%s] size: %s", op, filepath.Base(event.Name), sizeStr)
 
 					// Run indexing in background, throttled by the semaphore
 					go a.indexSingleFile(event.Name)
@@ -119,7 +120,7 @@ func (a *App) startWatcher(path string) {
 				if !ok {
 					return
 				}
-				fmt.Printf("Watcher error: %v\n", err)
+				utils.Log("ERROR", "Watcher error: %v", err)
 			}
 		}
 	}()
@@ -128,32 +129,44 @@ func (a *App) startWatcher(path string) {
 
 // indexSingleFile processes a single file (Markdown or Image) and updates the database
 func (a *App) indexSingleFile(path string) {
+	// 1. Quick check: skip if not modified since last index
+	info, err := os.Stat(path)
+	if err != nil {
+		utils.Log("ERROR", "File accessibility error: %v", err)
+		return
+	}
+
+	var lastMod int64
+	err = a.mgr.Conn.QueryRow("SELECT MAX(mod_time) FROM documents WHERE file_path = ?", path).Scan(&lastMod)
+	if err == nil && lastMod >= info.ModTime().Unix() {
+		// File is already up to date, exit silently to avoid log noise
+		return
+	}
+
 	ext := strings.ToLower(filepath.Ext(path))
 	isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png"
 
 	if isImage {
-		fmt.Printf("%s [WAIT] Image in queue: [%s]\n", time.Now().Format("3:04:05 PM"), filepath.Base(path))
+		utils.Log("WAIT", "Image in queue: [%s]", filepath.Base(path))
 	}
 
-	// Acquire semaphore (blocks if full)
+	// 2. Acquire semaphore (blocks if full)
 	a.vlmSemaphore <- struct{}{}
 	defer func() { <-a.vlmSemaphore }() // Release when done
-
-	if isImage {
-		fmt.Printf("%s [START] Processing image: [%s]\n", time.Now().Format("3:04:05 PM"), filepath.Base(path))
-	}
 
 	startTime := time.Now()
 	metrics := model.PerfMetrics{Action: "index"}
 
-	// Ensure the file is fully written and accessible
+	if isImage {
+		utils.Log("START", "Processing image: [%s]", filepath.Base(path))
+	}
+
 	if err := a.waitUntilReady(path, 5*time.Second); err != nil {
-		fmt.Printf("File is busy: %v\n", err)
+		utils.Log("ERROR", "File is busy: %v", err)
 		return
 	}
 
 	var chunks []parser.Chunk
-	var err error
 
 	// 1. Parse content based on file type
 	parseStart := time.Now()
@@ -194,8 +207,8 @@ func (a *App) indexSingleFile(path string) {
 			continue
 		}
 
-		res, err := a.mgr.Conn.Exec("INSERT INTO documents(heading, content, file_path) VALUES(?, ?, ?)",
-			c.Heading, c.Content, path)
+		res, err := a.mgr.Conn.Exec("INSERT INTO documents(heading, content, file_path, mod_time) VALUES(?, ?, ?, ?)",
+			c.Heading, c.Content, path, info.ModTime().Unix())
 		if err != nil {
 			continue
 		}
@@ -208,7 +221,7 @@ func (a *App) indexSingleFile(path string) {
 	runtime.EventsEmit(a.ctx, "perf_metrics", metrics)
 
 	if isImage {
-		fmt.Printf("%s | [FINISH] | Image processed: [%s] total: %dms\n", time.Now().Format("15:04:05:000"), filepath.Base(path), metrics.TotalMs)
+		utils.Log("FINISH", "Image processed: [%s] total: %dms", filepath.Base(path), metrics.TotalMs)
 	}
 
 	// Notify the frontend of success
@@ -283,16 +296,16 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 	}
 
 	finalContext := contextBuilder.String()
-	fmt.Printf("%s | [RAG]  | Query: [%s] | Found: %d snippets\n", time.Now().Format("15:04:05:000"), query, rowCount)
+	utils.Log("RAG", "Query: [%s] | Found: %d snippets", query, rowCount)
 	if rowCount > 0 {
 		// Log a preview of the context for verification
 		preview := finalContext
 		if len(preview) > 100 {
 			preview = preview[:100] + "..."
 		}
-		fmt.Printf("%s | [RAG]  | Context Preview: %s\n", time.Now().Format("15:04:05:000"), preview)
+		utils.Log("RAG", "Context Preview: %s", preview)
 	} else {
-		fmt.Printf("%s | [WARN] | NO LOCAL CONTEXT FOUND for this query!\n", time.Now().Format("15:04:05:000"))
+		utils.Log("WARN", "NO LOCAL CONTEXT FOUND for this query!")
 	}
 
 	// 3. LLM Streaming

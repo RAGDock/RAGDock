@@ -56,6 +56,7 @@ func (m *Manager) bootstrap() error {
 		heading TEXT,
 		content TEXT NOT NULL,
 		file_path TEXT,
+		mod_time INTEGER,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`
 
@@ -73,6 +74,9 @@ func (m *Manager) bootstrap() error {
 	if _, err := m.Conn.Exec(createVecTable); err != nil {
 		return fmt.Errorf("failed to create vector index table: %v", err)
 	}
+
+	// For backward compatibility: Ensure mod_time column exists in existing tables
+	m.Conn.Exec("ALTER TABLE documents ADD COLUMN mod_time INTEGER")
 	
 	return nil
 }
