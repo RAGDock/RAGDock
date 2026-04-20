@@ -68,6 +68,11 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
+// GetLanguage returns the current application language ("zh" or "en")
+func (a *App) GetLanguage() string {
+	return a.cfg.Language
+}
+
 // startWatcher sets up a real-time file system watcher for the specified directory
 func (a *App) startWatcher(path string) {
 	if a.watcher != nil {
@@ -96,6 +101,17 @@ func (a *App) startWatcher(path string) {
 					strings.HasSuffix(fileName, ".png")
 
 				if (event.Op&fsnotify.Create == fsnotify.Create || event.Op&fsnotify.Write == fsnotify.Write) && isSupported {
+					info, err := os.Stat(event.Name)
+					sizeStr := "unknown"
+					if err == nil {
+						sizeStr = fmt.Sprintf("%.1fkb", float64(info.Size())/1024.0)
+					}
+					op := "added"
+					if event.Op&fsnotify.Write == fsnotify.Write {
+						op = "modified"
+					}
+					fmt.Printf("%s | [WATCH] | file %s [%s] size: %s\n", time.Now().Format("15:04:05:000"), op, filepath.Base(event.Name), sizeStr)
+
 					// Run indexing in background, throttled by the semaphore
 					go a.indexSingleFile(event.Name)
 				}
@@ -192,7 +208,7 @@ func (a *App) indexSingleFile(path string) {
 	runtime.EventsEmit(a.ctx, "perf_metrics", metrics)
 
 	if isImage {
-		fmt.Printf("%s [FINISH] Image processed: [%s] total: %dms\n", time.Now().Format("3:04:05 PM"), filepath.Base(path), metrics.TotalMs)
+		fmt.Printf("%s | [FINISH] | Image processed: [%s] total: %dms\n", time.Now().Format("15:04:05:000"), filepath.Base(path), metrics.TotalMs)
 	}
 
 	// Notify the frontend of success
@@ -219,7 +235,7 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 	// 2. Local Search
 	searchStart := time.Now()
 	rows, err := a.mgr.Conn.Query(fmt.Sprintf(`
-        SELECT d.heading, d.content 
+        SELECT d.heading, d.content, d.file_path 
         FROM vec_idx v
         JOIN documents d ON v.rowid = d.id
         WHERE embedding MATCH ? AND k = %d
@@ -232,11 +248,44 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 	defer rows.Close()
 
 	var contextBuilder strings.Builder
+	var snippets []llm.DocSnippet
+	rowCount := 0
 	for rows.Next() {
-		var h, c string
-		if err := rows.Scan(&h, &c); err == nil {
+		var h, c, p string
+		if err := rows.Scan(&h, &c, &p); err == nil {
 			contextBuilder.WriteString(fmt.Sprintf("\n[Source: %s]\n%s\n", h, c))
+			
+			// Extract file metadata
+			info, err := os.Stat(p)
+			sizeStr := "unknown"
+			modTime := "unknown"
+			if err == nil {
+				sizeStr = fmt.Sprintf("%.1fkb", float64(info.Size())/1024.0)
+				modTime = info.ModTime().Format("2006-01-02 15:04")
+			}
+			
+			snippets = append(snippets, llm.DocSnippet{
+				FileName: filepath.Base(p),
+				Dir:      filepath.Dir(p),
+				Size:     sizeStr,
+				ModTime:  modTime,
+				Content:  c,
+			})
+			rowCount++
 		}
+	}
+
+	finalContext := contextBuilder.String()
+	fmt.Printf("%s | [RAG]  | Query: [%s] | Found: %d snippets\n", time.Now().Format("15:04:05:000"), query, rowCount)
+	if rowCount > 0 {
+		// Log a preview of the context for verification
+		preview := finalContext
+		if len(preview) > 100 {
+			preview = preview[:100] + "..."
+		}
+		fmt.Printf("%s | [RAG]  | Context Preview: %s\n", time.Now().Format("15:04:05:000"), preview)
+	} else {
+		fmt.Printf("%s | [WARN] | NO LOCAL CONTEXT FOUND for this query!\n", time.Now().Format("15:04:05:000"))
 	}
 
 	// 3. LLM Streaming
@@ -246,10 +295,13 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 
 	llmStart := time.Now()
 	var ttftOnce bool
-	err = llm.StreamOllama(searchCtx, a.cfg, contextBuilder.String(), history, query, func(token llm.GenerateResponse) {
-		if !ttftOnce && (token.Response != "" || token.Thinking != "") {
-			metrics.TTFTMs = time.Since(llmStart).Milliseconds()
-			ttftOnce = true
+	err = llm.StreamOllama(searchCtx, a.cfg, finalContext, history, query, func(token llm.GenerateResponse) {
+		if !ttftOnce {
+			token.SearchResults = snippets // Include snippets in the very first event
+			if token.Response != "" || token.Thinking != "" {
+				metrics.TTFTMs = time.Since(llmStart).Milliseconds()
+				ttftOnce = true
+			}
 		}
 
 		if token.Done {

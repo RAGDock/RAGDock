@@ -12,6 +12,15 @@ RAGDock is a high-performance, cross-platform desktop application that transform
 
 ---
 
+## ✨ New Features & Improvements
+
+- **🚀 Independent Model Routing**: Configure different models for VLM (image processing) and RAG (chat) to balance speed and accuracy.
+- **🌐 Full i18n Support**: Seamlessly switch between **Chinese (zh)** and **English (en)** via `.env`. Both UI and AI System Prompts adapt to your language.
+- **🔍 Deep Reference Traceability**: Every answer now includes a collapsible "Local References" section, showing filenames, paths, sizes, and modification times of the source data.
+- **🛡️ Enhanced Privacy Control**: Strictly limit AI answers to your local knowledge base or allow for supplemental general knowledge via prompt configuration.
+
+---
+
 ## Key Features
 
 - **Model Agnostic**: Seamlessly switch between different LLMs via [Ollama](https://ollama.com/) or use built-in ONNX models for embeddings. No vendor lock-in.
@@ -20,6 +29,26 @@ RAGDock is a high-performance, cross-platform desktop application that transform
 - **True Cross-Platform**: Optimized binaries for Windows, macOS (Intel/Apple Silicon), and Linux.
 - **Multi-Format Support**: Intelligent parsing for Markdown, PDF, TXT, and images.
 - **Modern UI/UX**: A clean, intuitive interface built with Svelte and Wails for a native desktop experience.
+
+---
+
+## ⚙️ Configuration (.env)
+
+Customize your RAGDock experience in the `.env` file:
+
+```env
+# 1. Language Setting (zh/en)
+APP_LANGUAGE=en
+
+# 2. VLM (Vision) Model - Best for OCR
+VLM_MODEL=qwen2.5-vl:3b
+
+# 3. RAG (Chat) Model - Best for reasoning
+RAG_MODEL=qwen2.5:3b
+
+# 4. Search Depth
+RAG_K=3
+```
 
 ---
 
@@ -37,113 +66,42 @@ RAGDock acts as the orchestration layer between your data and your models:
 
 ## Resource Setup
 
-For RAGDock to function correctly, specific system libraries and model files must be placed in the `resources` directory. These are excluded from the repository due to size and platform-specific requirements.
+For RAGDock to function correctly, specific system libraries and model files must be placed in the `resources` directory. 
 
 ### 1. System Libraries (`resources/lib/`)
-Place the required dynamic libraries for your operating system:
-
-| File Name | Purpose | Location |
-| :--- | :--- | :--- |
-| `libonnxruntime.dylib` / `.so` / `.dll` | ONNX Runtime engine | `resources/lib/` |
-| `vec0.dylib` / `.so` / `.dll` | SQLite vector search extension | `resources/lib/` |
-
-- **ONNX Runtime**: Download from [Microsoft ONNX Runtime Releases](https://github.com/microsoft/onnxruntime/releases).
-- **SQLite vec0**: Obtain from the [sqlite-vec](https://github.com/asg017/sqlite-vec) project.
+| File Name | Purpose |
+| :--- | :--- |
+| `libonnxruntime.dylib` / `.so` / `.dll` | ONNX Runtime engine |
+| `vec0.dylib` / `.so` / `.dll` | SQLite vector search extension |
 
 ### 2. Embedding Models (`resources/models/`)
-Download and place your chosen embedding model and its tokenizer:
-
-| File Name | Description | Location |
-| :--- | :--- | :--- |
-| `model.onnx` | ONNX-format embedding model (e.g., BGE-Small) | `resources/models/` |
-| `tokenizer.json` | JSON configuration for the tokenizer | `resources/models/` |
+| File Name | Description |
+| :--- | :--- |
+| `model.onnx` | ONNX-format embedding model (e.g., BGE-Small) |
+| `tokenizer.json` | JSON configuration for the tokenizer |
 
 ---
 
 ## Verified Models
 
-RAGDock is designed to be model-agnostic, but the following models have been specifically tested and verified for stability and performance.
-
-### Performance Benchmark (VLM Indexing)
-*Testing Environment: **Mac Mini M4 (16GB RAM)** | **macOS Tahoe 26.4.1 (25E253)***
-
-| Model | Task: Simple Layout (e.g. Podcast Cover) | Task: Complex OCR (High-density Text) | Recommendation |
-| :--- |:-----------------------------------------|:--------------------------------------| :--- |
-| **MiniCPM-V: 8B** (2.6 Q4_K_M) | **~11s**                                 | **~39s (Fastest)**                    | **Best Overall** (Stability & Speed) |
-| **Qwen2.5-VL: 3B** | ~19s                                     | ~77s                                  | Good for limited VRAM |
-| **Qwen3-VL: 2B** | ~41s                                     | ~97s                                  | Strong GUI/Spatial reasoning |
-
-### Vision Language Models (VLM)
-*Used for image indexing and semantic description.*
-- **minicpm-v:8b-2.6-q4_K_M**: Excellent OCR and scene description capabilities. Excels at Chinese Contents.
-- **qwen2.5vl:3b**: Decent OCR and scene description on multi-languages. Exceptional at semantic layout recovery and producing structured, highly readable documentation.
-- **qwen3-vl:2b**: Decent OCR and scene description on multi-languages. Highly effective at extracting granular UI technical details and metadata with high precision.
-
-### RAG Chat Models
-*Used for context-aware conversation and document interrogation.*
-- **gemma2:e4b**: Strong reasoning and factual accuracy.
-- **qwen2.5:1.5b**: Highly efficient for systems with limited resources.
-- **erwan2/DeepSeek-R1-Distill-Qwen-1.5B:latest**: Strong reasoning, factual accuracy, great Performance.
+| Category | Recommended Model | Strengths |
+|:---|:---|:---|
+| **VLM (Vision)** | `qwen2.5-vl:3b` | Exceptional OCR and layout recovery. |
+| **RAG (Chat)** | `qwen2.5:3b` | Great balance of speed and reasoning. |
+| **Lightweight** | `qwen2.5:1.5b` | Ultra-fast on low-resource hardware. |
 
 ---
 
-## Quick Start
+## 🛠️ Build & Development
 
-### Prerequisites
-- [Ollama](https://ollama.com/) installed and running.
-- Correct libraries and models placed in `resources/` (see **Resource Setup** above).
-- Modern OS (Windows 10+, macOS 12+, or mainstream Linux).
-
-### Installation
-1.  **Download**: Get the latest release for your platform from the [Releases](https://github.com/RAGDock/RAGDock/releases) page.
-2.  **Launch**: Run the executable. RAGDock will automatically initialize the local environment.
-3.  **Connect**: Select your preferred model from settings (e.g., `llama3`, `mistral`).
-4.  **Ingest**: Drag and drop folders or files into the "Knowledge" tab.
-5.  **Chat**: Start asking questions about your data.
-
----
-
-## Development
-
-To build RAGDock from source:
+To build RAGDock from source, please refer to our **[BUILD_GUIDE.md](./BUILD_GUIDE.md)** for detailed platform-specific instructions.
 
 ```bash
-# Clone the repository
-git clone https://github.com/RAGDock/RAGDock.git
-cd RAGDock
-
-# Ensure resources/lib and resources/models are populated (see Resource Setup)
-
-# Install frontend dependencies
-cd frontend
-npm install
-
-# Build and run with Wails
+# Quick Start for Dev
+cd frontend && npm install
 cd ..
 wails dev
 ```
-
-*Required: Go 1.21+, Node.js 18+, and Wails CLI.*
-
----
-
-## Roadmap
-
-- [ ] **Hybrid Search**: Combine keyword search with vector search for higher accuracy.
-- [ ] **Plugin System**: Support for custom document parsers (Excel, PowerPoint, etc.).
-- [ ] **Multi-Agent RAG**: Advanced reasoning steps for complex queries.
-- [ ] **Mobile Client**: Companion app for viewing synced local knowledge.
-
----
-
-## Contributing
-
-Contributions are welcome. Please feel free to:
-1. Fork the Project.
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`).
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`).
-4. Push to the Branch (`git push origin feature/AmazingFeature`).
-5. Open a Pull Request.
 
 ---
 
@@ -156,7 +114,5 @@ Distributed under the Apache License 2.0. See `LICENSE` for more information.
 ## Contact
 
 **RAGDock Team** - [GitHub](https://github.com/RAGDock)
-
-Project Link: [https://github.com/RAGDock/RAGDock](https://github.com/RAGDock/RAGDock)
 
 *"Empowering everyone with their own local intelligence hub."*

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -41,6 +42,9 @@ type AppConfig struct {
 
 	// Concurrency settings
 	VlmConcurrency int
+
+	// Language settings ("zh" or "en")
+	Language string
 }
 
 // LoadConfig reads settings from .env file or uses default values
@@ -61,17 +65,16 @@ func LoadConfig() *AppConfig {
 		effectiveVlmLimit = 1
 	}
 
-	return &AppConfig{
-		// ... existing fields ...
+	config := &AppConfig{
 		OllamaURL: getEnv("OLLAMA_URL", "http://localhost:11434"),
 
 		// VLM configuration (e.g., for OCR and image description)
-		VlmModel:         getEnv("VLM_MODEL", "minicpm-v:8b-2.6-q4_K_M"),
+		VlmModel:         getEnv("VLM_MODEL", "qwen2.5-vl:3b"),
 		VlmTemp:          getEnvFloat("VLM_TEMP", 0.1),
 		VlmRepeatPenalty: getEnvFloat("VLM_REPEAT_PENALTY", 1.1),
 
 		// RAG configuration (chat and knowledge retrieval)
-		RagModel:           getEnv("RAG_MODEL", "qwen2.5:1.5b"),
+		RagModel:           getEnv("RAG_MODEL", "qwen2.5:3b"),
 		RagTemp:            getEnvFloat("RAG_TEMP", 1.0),
 		RagRepeatPenalty:   getEnvFloat("RAG_REPEAT_PENALTY", 1.2),
 		RagPresencePenalty: getEnvFloat("RAG_PRESENCE_PENALTY", 1.5),
@@ -90,7 +93,15 @@ func LoadConfig() *AppConfig {
 		DbDir:          getEnv("DB_DIR", "."),
 		DbName:         getEnv("DB_NAME", "ragdock_local.db"),
 		VlmConcurrency: effectiveVlmLimit,
+
+		Language: getEnv("APP_LANGUAGE", "en"),
 	}
+
+	fmt.Printf("\n[CONFIG] VLM Model: %s\n", config.VlmModel)
+	fmt.Printf("[CONFIG] RAG Model: %s\n", config.RagModel)
+	fmt.Printf("[CONFIG] Language: %s\n", config.Language)
+
+	return config
 }
 
 // GetFullLibPath returns the platform-specific path for dynamic libraries (.so, .dll, .dylib)

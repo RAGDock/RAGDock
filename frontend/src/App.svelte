@@ -1,18 +1,75 @@
 <script>
     import { EventsOn } from '../wailsjs/runtime/runtime';
-    import { SelectAndIndexFolder, SearchAndAsk, StopSearch } from '../wailsjs/go/main/App';
+    import { SelectAndIndexFolder, SearchAndAsk, StopSearch, GetLanguage } from '../wailsjs/go/main/App';
     import { fade, fly } from 'svelte/transition';
     import { marked } from 'marked';
-    import { tick } from 'svelte';
+    import { tick, onMount } from 'svelte';
+
+    // 1. i18n Dictionary
+    const i18n = {
+        zh: {
+            connect: "连接知识库",
+            ready: "就绪",
+            thinking: "RAGDock 正在思考...",
+            halted: "已停止",
+            error: "发生错误",
+            stopped: "已手动停止",
+            lastPerf: "上次",
+            metrics: "性能指标",
+            emptyTitle: "RAGDock",
+            emptySub: "您的私有离线知识库已准备就绪。",
+            you: "您",
+            assistant: "RAGDOCK",
+            copy: "复制",
+            copied: "已复制!",
+            thinkingChain: "思维链",
+            placeholder: "向您的文档提问...",
+            generating: "正在生成回答...",
+            syncPrefix: "同步中: ",
+            refs: "本地参考资料",
+            noRefs: "未找到相关本地资料"
+        },
+        en: {
+            connect: "Connect Knowledge Base",
+            ready: "Ready",
+            thinking: "RAGDock is thinking...",
+            halted: "Halted",
+            error: "Error",
+            stopped: "Stopped",
+            lastPerf: "Last",
+            metrics: "Metrics",
+            emptyTitle: "RAGDock",
+            emptySub: "Your private offline knowledge base is ready.",
+            you: "YOU",
+            assistant: "RAGDOCK",
+            copy: "COPY",
+            copied: "COPIED!",
+            thinkingChain: "Thinking Chain",
+            placeholder: "Ask your documents...",
+            generating: "Generating response...",
+            syncPrefix: "Synced: ",
+            refs: "Local References",
+            noRefs: "No relevant local documents found"
+        }
+    };
+
+    let lang = "zh"; // Default
+    $: t = i18n[lang] || i18n.en;
 
     // Application state management
     let query = "";
     let path = "";
-    let status = "Ready";
+    let status = "";
     let syncMessage = "";
     let isSearching = false; 
-    let lastPerf = null; // Store latest performance metrics
-    let showPerf = false; // Toggle for performance overlay
+    let lastPerf = null; 
+    let showPerf = false; 
+
+    // Initialize Language and Status
+    onMount(async () => {
+        lang = await GetLanguage();
+        status = t.ready;
+    });
 
     // Conversation structure: { role: 'user'|'assistant', content: '...', thinking: '...' }
     let messages = [];
@@ -24,6 +81,11 @@
         let lastMsg = messages[messages.length - 1];
 
         if (lastMsg && lastMsg.role === 'assistant') {
+            // Update search results metadata if present
+            if (token.search_results && token.search_results.length > 0) {
+                lastMsg.refs = token.search_results;
+            }
+
             // Distinguish between reasoning (thinking) and final answer (response)
             if (token.thinking) {
                 lastMsg.thinking = (lastMsg.thinking || "") + token.thinking;
@@ -73,7 +135,8 @@
         messages = [...messages, {
             role: "assistant",
             content: "",
-            thinking: ""
+            thinking: "",
+            refs: []
         }];
 
         await scrollToBottom();
@@ -129,14 +192,14 @@
     <div class="content-wrapper">
         <header class="navbar">
             <div class="path-badge" on:click={() => SelectAndIndexFolder().then(p => path = p)}>
-                <span class="dot"></span> {path || "Connect Knowledge Base"}
+                <span class="dot"></span> {path || t.connect}
             </div>
             {#if lastPerf}
                 <div class="perf-tag" class:active={showPerf} on:click={() => showPerf = !showPerf}>
                     ⚡ {lastPerf.total_ms}ms
                     {#if showPerf}
                         <div class="perf-popover" in:fade>
-                            <div class="perf-title">Last {lastPerf.action.toUpperCase()} Metrics</div>
+                            <div class="perf-title">{t.lastPerf} {lastPerf.action.toUpperCase()} {t.metrics}</div>
                             <div class="perf-grid">
                                 {#if lastPerf.action === 'search'}
                                     <div class="p-row"><span>TTFT:</span> {lastPerf.ttft_ms}ms</div>
@@ -158,18 +221,18 @@
         <section class="display-container" bind:this={scrollContainer}>
             {#if messages.length === 0}
                 <div class="empty-state">
-                    <h2>RAGDock</h2>
-                    <p>Your private offline knowledge base is ready.</p>
+                    <h2>{t.emptyTitle}</h2>
+                    <p>{t.emptySub}</p>
                 </div>
             {/if}
 
             {#each messages as msg, i}
                 <div class="message-row {msg.role}" in:fade={{ duration: 300 }}>
                     <div class="message-header">
-                        <div class="meta">{msg.role === 'user' ? 'YOU' : 'RAGDOCK'}</div>
+                        <div class="meta">{msg.role === 'user' ? t.you : t.assistant}</div>
                         {#if msg.role === 'assistant' && msg.content}
                             <button class="copy-btn" on:click={() => copyToClipboard(msg.content, i)}>
-                                {copiedIndex === i ? 'COPIED!' : 'COPY'}
+                                {copiedIndex === i ? t.copied : t.copy}
                             </button>
                         {/if}
                     </div>
@@ -177,7 +240,7 @@
                     <div class="content">
                         {#if msg.thinking}
                             <details class="thinking-box" open={isSearching && i === messages.length - 1}>
-                                <summary>Thinking Chain</summary>
+                                <summary>{t.thinkingChain}</summary>
                                 <div class="thinking-text">{msg.thinking}</div>
                             </details>
                         {/if}
@@ -187,6 +250,24 @@
                                 {@html marked.parse(msg.content)}
                             </div>
                         {/if}
+
+                        {#if msg.role === 'assistant' && msg.refs && msg.refs.length > 0}
+                            <details class="refs-box">
+                                <summary>{t.refs} ({msg.refs.length})</summary>
+                                <div class="refs-list">
+                                    {#each msg.refs as ref}
+                                        <div class="ref-item">
+                                            <div class="ref-file">📄 {ref.file_name}</div>
+                                            <div class="ref-meta">
+                                                <span>📂 {ref.dir}</span>
+                                                <span>⚖️ {ref.size}</span>
+                                                <span>🕒 {ref.mod_time}</span>
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </details>
+                        {/if}
                     </div>
                 </div>
             {/each}
@@ -194,7 +275,7 @@
             {#if isSearching && (!messages[messages.length - 1]?.thinking && !messages[messages.length - 1]?.content)}
                 <div class="thinking-wrapper" in:fade={{ duration: 200 }} out:fade={{ duration: 100 }}>
                     <div class="message-row assistant thinking">
-                        <div class="meta">RAGDOCK</div>
+                        <div class="meta">{t.assistant}</div>
                         <div class="content">
                             <div class="typing-indicator">
                                 <span></span><span></span><span></span>
@@ -209,7 +290,7 @@
             <div class="input-pill" class:searching={isSearching}>
                 <input
                         bind:value={query}
-                        placeholder={isSearching ? "Generating response..." : "Ask your documents..."}
+                        placeholder={isSearching ? t.generating : t.placeholder}
                         on:keypress={e => e.key === 'Enter' && !isSearching && handleSearch()}
                         disabled={isSearching}
                 />
@@ -329,6 +410,59 @@
         font-style: italic;
         white-space: pre-wrap;
     }
+
+    /* Reference Box Styles */
+    .refs-box {
+        margin-top: 15px;
+        background: #fff;
+        border: 1px solid #eee;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .refs-box summary {
+        padding: 10px 15px;
+        font-size: 11px;
+        font-weight: 800;
+        color: #888;
+        cursor: pointer;
+        background: #fafafa;
+        list-style: none;
+        user-select: none;
+        border-bottom: 1px solid transparent;
+        transition: all 0.2s;
+    }
+    .refs-box[open] summary {
+        border-bottom: 1px solid #eee;
+        color: #121212;
+    }
+    .refs-box summary::-webkit-details-marker { display: none; }
+
+    .refs-list {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .ref-item {
+        padding: 10px;
+        background: #fdfdfd;
+        border-radius: 8px;
+        border: 1px solid #f0f0f0;
+    }
+    .ref-file {
+        font-size: 12px;
+        font-weight: 700;
+        color: #121212;
+        margin-bottom: 4px;
+    }
+    .ref-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 10px;
+        color: #999;
+    }
+    .ref-meta span { display: flex; align-items: center; gap: 4px; }
 
     .copy-btn {
         background: transparent; border: 1px solid #ddd; color: #999;
