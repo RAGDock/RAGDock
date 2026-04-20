@@ -1,3 +1,7 @@
+<p align='center'>
+  <img src="assets/logo.jpg" alt="Logo" width=300>
+</p>
+
 # RAGDock
 
 > **The Universal Local RAG Hub for Your Private Knowledge Base.**  
@@ -40,10 +44,10 @@ Customize your RAGDock experience in the `.env` file:
 # 1. Language Setting (zh/en)
 APP_LANGUAGE=en
 
-# 2. VLM (Vision) Model - Best for OCR
+# 2. VLM (Vision) Model - Default for OCR
 VLM_MODEL=qwen2.5-vl:3b
 
-# 3. RAG (Chat) Model - Best for reasoning
+# 3. RAG (Chat) Model - Default for Chat
 RAG_MODEL=qwen2.5:3b
 
 # 4. Search Depth
@@ -84,11 +88,18 @@ For RAGDock to function correctly, specific system libraries and model files mus
 
 ## Verified Models
 
-| Category | Recommended Model | Strengths |
-|:---|:---|:---|
-| **VLM (Vision)** | `qwen2.5-vl:3b` | Exceptional OCR and layout recovery. |
-| **RAG (Chat)** | `qwen2.5:3b` | Great balance of speed and reasoning. |
-| **Lightweight** | `qwen2.5:1.5b` | Ultra-fast on low-resource hardware. |
+| Category | Model Name (Ollama) | RAG | VLM | Accuracy | **RAM Needed** | Strengths |
+|:---|:---|:---:|:---:|:---|:---|:---|
+| **VLM** | `qwen2.5-vl:7b` | ✅ | ✅ | **Top** | **~8.5 GB** | Exceptional OCR & layout recovery. |
+| **VLM** | `qwen2.5-vl:3b` | ✅ | ✅ | Good | **~4.8 GB** | Best balance for 8GB VRAM Macs. |
+| **VLM** | `minicpm-v:8b-2.6` | ✅ | ✅ | Very Good | **~6.5 GB** | **Fastest** VLM indexing speed. |
+| **VLM** | `qwen2-vl:2b` | ✅ | ✅ | Good | **~3.2 GB** | Excellent for low-resource OCR. |
+| **RAG** | `gemma2:9b` | ✅ | ❌ | Very Good | **~6.2 GB** | Strong reasoning & factual accuracy. |
+| **RAG** | `gemma2:2b` | ✅ | ❌ | Very Good | **~2.4 GB** | Small but very capable for RAG. |
+| **Chat** | `qwen2.5:1.5b` | ✅ | ❌ | Good | **~1.6 GB** | Ultra-fast on low-resource hardware. |
+| **Reasoning** | `DeepSeek-R1-Distill-Qwen-1.5B` | ✅ | ❌ | Very Good | **~1.8 GB** | High-speed logic & structured output. |
+
+> **Hardware Note**: For **VLM (Vision)** models, additional 1.5GB–2.5GB RAM is consumed by vision encoders and image tokens. On Apple Silicon (Mac), this is handled via Unified Memory. On Windows/Linux, ensure your dedicated GPU VRAM is at least 1GB larger than the "RAM Needed" for a smooth experience.
 
 ---
 
