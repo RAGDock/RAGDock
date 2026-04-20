@@ -259,7 +259,13 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 			info, err := os.Stat(p)
 			sizeStr := "unknown"
 			modTime := "unknown"
-			if err == nil {
+			isDeleted := false
+			
+			if err != nil {
+				if os.IsNotExist(err) {
+					isDeleted = true
+				}
+			} else {
 				sizeStr = fmt.Sprintf("%.1fkb", float64(info.Size())/1024.0)
 				modTime = info.ModTime().Format("2006-01-02 15:04")
 			}
@@ -270,6 +276,7 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 				Size:     sizeStr,
 				ModTime:  modTime,
 				Content:  c,
+				Deleted:  isDeleted,
 			})
 			rowCount++
 		}

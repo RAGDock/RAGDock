@@ -27,7 +27,8 @@
             generating: "正在生成回答...",
             syncPrefix: "同步中: ",
             refs: "本地参考资料",
-            noRefs: "未找到相关本地资料"
+            noRefs: "未找到相关本地资料",
+            deleted: "已删除"
         },
         en: {
             connect: "Connect Knowledge Base",
@@ -49,7 +50,8 @@
             generating: "Generating response...",
             syncPrefix: "Synced: ",
             refs: "Local References",
-            noRefs: "No relevant local documents found"
+            noRefs: "No relevant local documents found",
+            deleted: "Deleted"
         }
     };
 
@@ -256,8 +258,13 @@
                                 <summary>{t.refs} ({msg.refs.length})</summary>
                                 <div class="refs-list">
                                     {#each msg.refs as ref}
-                                        <div class="ref-item">
-                                            <div class="ref-file">📄 {ref.file_name}</div>
+                                        <div class="ref-item" class:deleted={ref.deleted}>
+                                            <div class="ref-file">
+                                                📄 {ref.file_name}
+                                                {#if ref.deleted}
+                                                    <span class="deleted-tag">{t.deleted}</span>
+                                                {/if}
+                                            </div>
                                             <div class="ref-meta">
                                                 <span>📂 {ref.dir}</span>
                                                 <span>⚖️ {ref.size}</span>
@@ -449,11 +456,28 @@
         border-radius: 8px;
         border: 1px solid #f0f0f0;
     }
+    .ref-item.deleted {
+        background: #fffcfc;
+        border-color: #ffe0e0;
+        opacity: 0.8;
+    }
     .ref-file {
         font-size: 12px;
         font-weight: 700;
         color: #121212;
         margin-bottom: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .deleted-tag {
+        font-size: 9px;
+        background: #ff5252;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
     .ref-meta {
         display: flex;

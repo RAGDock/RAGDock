@@ -58,6 +58,7 @@ type DocSnippet struct {
 	Size     string `json:"size"`
 	ModTime  string `json:"mod_time"`
 	Content  string `json:"content"`
+	Deleted  bool   `json:"deleted"`
 }
 
 // Message defines a single turn in a chat conversation
