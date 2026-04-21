@@ -12,6 +12,10 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://github.com/RAGDock/RAGDock)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/RAGDock/RAGDock/pulls)
 
+## UI Preview
+<p align='center'>
+  <img src="assets/preview.png" alt="Logo" width=1024>
+</p>
 RAGDock is a high-performance, cross-platform desktop application that transforms your local documents into a searchable, intelligent knowledge base. Built with Go, Wails, and SQLite, it provides a "dock" where you can plug in any local LLM (via Ollama) or embedding model (via ONNX) to interact with your data—100% offline.
 
 ---
