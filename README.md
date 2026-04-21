@@ -105,9 +105,7 @@ For RAGDock to function correctly, specific system libraries and model files mus
 
 ---
 
-## 🛠️ Build & Development
-
-To build RAGDock from source, please refer to our **[BUILD_GUIDE.md](./BUILD_GUIDE.md)** for detailed platform-specific instructions.
+## 🛠️ Build & Run 
 
 ```bash
 # Quick Start for Dev
