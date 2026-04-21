@@ -30,6 +30,7 @@ type App struct {
 	embedder     *model.Embedder
 	watcher      *fsnotify.Watcher
 	vlmSemaphore chan struct{} // Global semaphore for rate-limiting heavy VLM/Parsing tasks
+	debouncer    *utils.TaskDebouncer
 }
 
 // NewApp creates a new instance of the App
@@ -54,6 +55,8 @@ func (a *App) startup(ctx context.Context) {
 
 	// 2. Initialize the global semaphore for concurrency control
 	a.vlmSemaphore = make(chan struct{}, a.cfg.VlmConcurrency)
+	// init debouncer for file change events
+	a.debouncer = utils.NewTaskDebouncer(500 * time.Millisecond)
 
 	var err error
 	// 3. Initialize the Database Manager
@@ -103,10 +106,16 @@ func (a *App) startWatcher(path string) {
 
 				if (event.Op&fsnotify.Create == fsnotify.Create || event.Op&fsnotify.Write == fsnotify.Write) && isSupported {
 					info, err := os.Stat(event.Name)
-					sizeStr := "unknown"
-					if err == nil {
-						sizeStr = fmt.Sprintf("%.1fkb", float64(info.Size())/1024.0)
+					if err != nil {
+						continue
 					}
+
+					// ignore empty file
+					if info.Size() == 0 {
+						continue
+					}
+
+					sizeStr := fmt.Sprintf("%.1fkb", float64(info.Size())/1024.0)
 					op := "added"
 					if event.Op&fsnotify.Write == fsnotify.Write {
 						op = "modified"
@@ -114,7 +123,10 @@ func (a *App) startWatcher(path string) {
 					utils.Log("WATCH", "file %s [%s] size: %s", op, filepath.Base(event.Name), sizeStr)
 
 					// Run indexing in background, throttled by the semaphore
-					go a.indexSingleFile(event.Name)
+					// debounce for one particular file within 500ms
+					a.debouncer.Schedule(event.Name, func() {
+						a.indexSingleFile(event.Name)
+					})
 				}
 			case err, ok := <-a.watcher.Errors:
 				if !ok {
@@ -200,7 +212,11 @@ func (a *App) indexSingleFile(path string) {
 		}
 
 		embedStart := time.Now()
-		vec, err := a.embedder.Generate(c.Content)
+
+		// include Heading (file name) & Content
+		combinedText := fmt.Sprintf("title/file name: %s\ncontent desc: %s", c.Heading, c.Content)
+
+		vec, err := a.embedder.Generate(combinedText)
 		totalEmbedMs += time.Since(embedStart).Milliseconds()
 
 		if err != nil {
@@ -267,13 +283,13 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 		var h, c, p string
 		if err := rows.Scan(&h, &c, &p); err == nil {
 			contextBuilder.WriteString(fmt.Sprintf("\n[Source: %s]\n%s\n", h, c))
-			
+
 			// Extract file metadata
 			info, err := os.Stat(p)
 			sizeStr := "unknown"
 			modTime := "unknown"
 			isDeleted := false
-			
+
 			if err != nil {
 				if os.IsNotExist(err) {
 					isDeleted = true
@@ -282,7 +298,7 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 				sizeStr = fmt.Sprintf("%.1fkb", float64(info.Size())/1024.0)
 				modTime = info.ModTime().Format("2006-01-02 15:04")
 			}
-			
+
 			snippets = append(snippets, llm.DocSnippet{
 				FileName: filepath.Base(p),
 				Dir:      filepath.Dir(p),
