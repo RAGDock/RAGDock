@@ -98,8 +98,9 @@ func (a *App) startWatcher(path string) {
 				}
 
 				fileName := strings.ToLower(event.Name)
-				// Supported formats: Markdown and common image types
+				// Supported formats: Markdown, PDF and common image types
 				isSupported := strings.HasSuffix(fileName, ".md") ||
+					strings.HasSuffix(fileName, ".pdf") ||
 					strings.HasSuffix(fileName, ".jpg") ||
 					strings.HasSuffix(fileName, ".jpeg") ||
 					strings.HasSuffix(fileName, ".png")
@@ -156,11 +157,9 @@ func (a *App) indexSingleFile(path string) {
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))
-	isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png"
+	fileName := filepath.Base(path)
 
-	if isImage {
-		utils.Log("WAIT", "Image in queue: [%s]", filepath.Base(path))
-	}
+	utils.Log("WAIT", "File in queue: [%s]", fileName)
 
 	// 2. Acquire semaphore (blocks if full)
 	a.vlmSemaphore <- struct{}{}
@@ -169,9 +168,7 @@ func (a *App) indexSingleFile(path string) {
 	startTime := time.Now()
 	metrics := model.PerfMetrics{Action: "index"}
 
-	if isImage {
-		utils.Log("START", "Processing image: [%s]", filepath.Base(path))
-	}
+	utils.Log("START", "Processing file: [%s]", fileName)
 
 	if err := a.waitUntilReady(path, 5*time.Second); err != nil {
 		utils.Log("ERROR", "File is busy: %v", err)
@@ -184,6 +181,8 @@ func (a *App) indexSingleFile(path string) {
 	parseStart := time.Now()
 	if ext == ".md" {
 		chunks, err = parser.ParseMarkdown(path)
+	} else if ext == ".pdf" {
+		chunks, err = parser.ParsePDF(path)
 	} else {
 		// Handle images using the Vision Language Model (VLM)
 		var chunk parser.Chunk
@@ -236,9 +235,7 @@ func (a *App) indexSingleFile(path string) {
 	metrics.TotalMs = time.Since(startTime).Milliseconds()
 	runtime.EventsEmit(a.ctx, "perf_metrics", metrics)
 
-	if isImage {
-		utils.Log("FINISH", "Image processed: [%s] total: %dms", filepath.Base(path), metrics.TotalMs)
-	}
+	utils.Log("FINISH", "File processed: [%s] total: %dms", fileName, metrics.TotalMs)
 
 	// Notify the frontend of success
 	runtime.EventsEmit(a.ctx, "file_synced", "Synced: "+filepath.Base(path))
@@ -385,6 +382,7 @@ func (a *App) indexDirectory(root string) {
 		if err == nil && !info.IsDir() {
 			fileName := strings.ToLower(info.Name())
 			if strings.HasSuffix(fileName, ".md") ||
+				strings.HasSuffix(fileName, ".pdf") ||
 				strings.HasSuffix(fileName, ".jpg") ||
 				strings.HasSuffix(fileName, ".jpeg") ||
 				strings.HasSuffix(fileName, ".png") {
