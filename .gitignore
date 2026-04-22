@@ -38,6 +38,7 @@ yarn-error.log*
 # 模型文件 (体积巨大，建议在 README 中提供下载链接而不是传到 Git)
 resources/models/*.onnx
 resources/models/tokenizer.json
+resources/models/.cache/    # 💡 新增：忽略 HuggingFace/ONNX 缓存目录
 
 # 日志文件
 logs/
