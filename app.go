@@ -98,14 +98,13 @@ func (a *App) startWatcher(path string) {
 				}
 
 				fileName := strings.ToLower(event.Name)
-				// Supported formats: Markdown, PDF and common image types
-				isSupported := strings.HasSuffix(fileName, ".md") ||
-					strings.HasSuffix(fileName, ".pdf") ||
-					strings.HasSuffix(fileName, ".jpg") ||
-					strings.HasSuffix(fileName, ".jpeg") ||
-					strings.HasSuffix(fileName, ".png")
+				ext := filepath.Ext(fileName)
+				// Supported formats: Markdown, Text, Office, eBooks, and Images
+				isDoc := ext == ".md" || ext == ".txt" || ext == ".pdf" || ext == ".docx" || 
+				         ext == ".epub" || ext == ".mobi" || ext == ".fb2" || ext == ".xps" || ext == ".oxps"
+				isImg := ext == ".jpg" || ext == ".jpeg" || ext == ".png"
 
-				if (event.Op&fsnotify.Create == fsnotify.Create || event.Op&fsnotify.Write == fsnotify.Write) && isSupported {
+				if (event.Op&fsnotify.Create == fsnotify.Create || event.Op&fsnotify.Write == fsnotify.Write) && (isDoc || isImg) {
 					info, err := os.Stat(event.Name)
 					if err != nil {
 						continue
@@ -181,8 +180,10 @@ func (a *App) indexSingleFile(path string) {
 	parseStart := time.Now()
 	if ext == ".md" {
 		chunks, err = parser.ParseMarkdown(path)
-	} else if ext == ".pdf" {
-		chunks, err = parser.ParsePDF(path)
+	} else if ext == ".txt" {
+		chunks, err = parser.ParsePlainText(path)
+	} else if ext == ".pdf" || ext == ".docx" || ext == ".epub" || ext == ".mobi" || ext == ".fb2" || ext == ".xps" || ext == ".oxps" {
+		chunks, err = parser.ParseDocumentUniversal(path)
 	} else {
 		// Handle images using the Vision Language Model (VLM)
 		var chunk parser.Chunk
@@ -275,35 +276,40 @@ func (a *App) SearchAndAsk(query string, history []llm.Message) error {
 
 	var contextBuilder strings.Builder
 	var snippets []llm.DocSnippet
+	seenFiles := make(map[string]bool)
 	rowCount := 0
 	for rows.Next() {
 		var h, c, p string
 		if err := rows.Scan(&h, &c, &p); err == nil {
 			contextBuilder.WriteString(fmt.Sprintf("\n[Source: %s]\n%s\n", h, c))
 
-			// Extract file metadata
-			info, err := os.Stat(p)
-			sizeStr := "unknown"
-			modTime := "unknown"
-			isDeleted := false
+			// Only add unique files to the snippets list for UI display
+			if !seenFiles[p] {
+				// Extract file metadata
+				info, err := os.Stat(p)
+				sizeStr := "unknown"
+				modTime := "unknown"
+				isDeleted := false
 
-			if err != nil {
-				if os.IsNotExist(err) {
-					isDeleted = true
+				if err != nil {
+					if os.IsNotExist(err) {
+						isDeleted = true
+					}
+				} else {
+					sizeStr = fmt.Sprintf("%.1fkb", float64(info.Size())/1024.0)
+					modTime = info.ModTime().Format("2006-01-02 15:04")
 				}
-			} else {
-				sizeStr = fmt.Sprintf("%.1fkb", float64(info.Size())/1024.0)
-				modTime = info.ModTime().Format("2006-01-02 15:04")
-			}
 
-			snippets = append(snippets, llm.DocSnippet{
-				FileName: filepath.Base(p),
-				Dir:      filepath.Dir(p),
-				Size:     sizeStr,
-				ModTime:  modTime,
-				Content:  c,
-				Deleted:  isDeleted,
-			})
+				snippets = append(snippets, llm.DocSnippet{
+					FileName: filepath.Base(p),
+					Dir:      filepath.Dir(p),
+					Size:     sizeStr,
+					ModTime:  modTime,
+					Content:  c,
+					Deleted:  isDeleted,
+				})
+				seenFiles[p] = true
+			}
 			rowCount++
 		}
 	}
@@ -380,12 +386,10 @@ func (a *App) indexDirectory(root string) {
 	var filesToIndex []string
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() {
-			fileName := strings.ToLower(info.Name())
-			if strings.HasSuffix(fileName, ".md") ||
-				strings.HasSuffix(fileName, ".pdf") ||
-				strings.HasSuffix(fileName, ".jpg") ||
-				strings.HasSuffix(fileName, ".jpeg") ||
-				strings.HasSuffix(fileName, ".png") {
+			ext := strings.ToLower(filepath.Ext(path))
+			if ext == ".md" || ext == ".txt" || ext == ".pdf" || ext == ".docx" || 
+			   ext == ".epub" || ext == ".mobi" || ext == ".fb2" || ext == ".xps" || ext == ".oxps" ||
+			   ext == ".jpg" || ext == ".jpeg" || ext == ".png" {
 				filesToIndex = append(filesToIndex, path)
 			}
 		}

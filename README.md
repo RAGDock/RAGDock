@@ -35,11 +35,25 @@ RAGDock is a high-performance, cross-platform desktop application that transform
 - **Privacy by Design**: All data stays on your machine. Parsing, vectorization, and inference happen entirely locally.
 - **Lightweight & Fast**: Powered by a Go backend and a specialized SQLite vector extension for sub-millisecond retrieval.
 - **True Cross-Platform**: Optimized binaries for Windows, macOS (Intel/Apple Silicon), and Linux.
-- **Multi-Format Support**: Intelligent parsing for Markdown, PDF, TXT, and images.
+- **Multi-Format Support**: Intelligent parsing for Markdown, PDF, Word, eBooks, Text and images.
 - **Modern UI/UX**: A clean, intuitive interface built with Svelte and Wails for a native desktop experience.
 
 ---
 
+## Supported File Formats
+
+| Category   | Extension  | Description                                       | Text Parsing | Image Parsing | Typical Use Case                          |
+|------------|------------|---------------------------------------------------|--------------|---------------|-------------------------------------------|
+| Image      | .png       | Portable Network Graphics with lossless compression | ✅            | ✅             | Web graphics, UI elements, digital art    |
+| Image      | .jpg/jpeg  | Joint Photographic Experts Group for compressed photos | ✅            | ✅             | Photography, web images, storage optimization |
+| Ebook      | .epub      | Open ebook standard with reflowable content       | ✅            | ❌             | Mobile reading, cross-platform distribution |
+| Ebook      | .mobi      | Format primarily used by Kindle devices           | ✅            | ❌             | Kindle reading, personal document archiving |
+| Ebook      | .fb2       | XML-based ebook format with structured data       | ✅            | ❌             | Digital libraries, literary work storage  |
+| Document   | .pdf       | Portable Document Format for fixed layout         | ✅            | ❌             | Business documentation, official reports  |
+| Document   | .docx      | Microsoft Word standard based on XML              | ✅            | ❌             | Report writing, collaborative editing     |
+| Document   | .xps       | Microsoft's XML Paper Specification format        | ✅            | ❌             | Print distribution, document preservation |
+| Document   | .oxps      | Open standard version of the XPS format           | ✅            | ❌             | Document exchange, fixed content display  |
+| Plain Text | .txt       | Basic text format without formatting info         | ✅            | ❌             | Coding, quick notes, configuration files  |
 ## ⚙️ Configuration (.env)
 
 Customize your RAGDock experience in the `.env` file:
