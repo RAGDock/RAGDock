@@ -72,6 +72,14 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
+// shutdown is called by Wails when the application is about to exit
+func (a *App) shutdown(ctx context.Context) {
+	if a.watcher != nil {
+		a.watcher.Close()
+		utils.Log("WATCH", "File watcher closed successfully")
+	}
+}
+
 // GetLanguage returns the current application language ("zh" or "en")
 func (a *App) GetLanguage() string {
 	return a.cfg.Language
